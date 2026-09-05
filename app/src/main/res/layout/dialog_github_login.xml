@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog_rounded"
+    android:padding="24dp">
+
+    <!-- App Logo Header -->
+    <LinearLayout
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:layout_gravity="center_horizontal"
+        android:gravity="center"
+        android:background="@drawable/bg_circle_icon"
+        android:layout_marginBottom="16dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="&lt;&gt;"
+            android:textColor="#3B82F6"
+            android:textSize="28sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:text="Vynara GitHub Workspace"
+        android:textColor="#FFFFFF"
+        android:textSize="20sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:text="Full 3D Studio &amp; Cloud Render Workflow"
+        android:textColor="#9CA3AF"
+        android:textSize="13sp"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Sign in with GitHub"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="4dp" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Authorize via official GitHub OAuth2 portal"
+        android:textColor="#9CA3AF"
+        android:textSize="12sp"
+        android:layout_marginBottom="16dp" />
+
+    <!-- Button 1: Web Sign In -->
+    <Button
+        android:id="@+id/btn_sign_in_web"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="Sign in with GitHub"
+        android:textAllCaps="false"
+        android:textColor="#FFFFFF"
+        android:textSize="15sp"
+        android:textStyle="bold"
+        android:backgroundTint="#2DA44E"
+        android:layout_marginBottom="12dp"
+        app:cornerRadius="8dp" />
+
+    <!-- Button 2: Device Flow Sign In -->
+    <Button
+        android:id="@+id/btn_sign_in_device"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:text="Sign in with GitHub (Device Flow)"
+        android:textAllCaps="false"
+        android:textColor="#1F2937"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:backgroundTint="#F3F4F6"
+        android:layout_marginBottom="20dp"
+        app:cornerRadius="8dp" />
+
+    <!-- Options Row: Enter OAuth Code & Configure OAuth App ID -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginBottom="24dp">
+
+        <TextView
+            android:id="@+id/tv_enter_oauth_code"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="Enter OAuth Code"
+            android:textColor="#3B82F6"
+            android:textSize="13sp"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <View
+            android:layout_width="1dp"
+            android:layout_height="16dp"
+            android:background="#374151" />
+
+        <TextView
+            android:id="@+id/tv_configure_app_id"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="Configure OAuth App ID"
+            android:textColor="#9CA3AF"
+            android:textSize="13sp"
+            android:padding="8dp"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <!-- Button 3: Guest / Demo Mode -->
+    <Button
+        android:id="@+id/btn_demo_guest_mode"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:text="Explore in Demo / Guest Mode"
+        android:textAllCaps="false"
+        android:textColor="#E5E7EB"
+        android:textSize="13sp"
+        android:backgroundTint="#1F2937"
+        app:cornerRadius="8dp" />
+
+</LinearLayout>
