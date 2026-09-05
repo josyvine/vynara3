@@ -1,5 +1,7 @@
 package com.example.ai;
 
+import com.example.ai.agents.BlenderWorkerAgent;
+import com.example.ai.protocol.AIDirectorSpec;
 import com.example.ai.protocol.AIToolCall;
 import com.example.ai.protocol.AIProductionPlan;
 import com.example.ai.protocol.AIProductionRequest;
@@ -75,7 +77,33 @@ public class PromptInterpreter {
             String cloudTaskId = "task_" + taskCounter++;
             String assetId = "asset_blender_" + System.currentTimeMillis();
 
+            // 1. Establish Director Spec & Modular Worker Scripts
+            AIDirectorSpec spec = new AIDirectorSpec();
             String lowerPrompt = userPrompt.toLowerCase();
+            if (lowerPrompt.contains("villa") || lowerPrompt.contains("house") || lowerPrompt.contains("pool")) {
+                spec.setSceneType("modern_architecture");
+                spec.setMood("twilight_golden_hour");
+                spec.setFocalLengthMm(35.0f);
+            } else if (lowerPrompt.contains("sofa") || lowerPrompt.contains("chair") || lowerPrompt.contains("couch")) {
+                spec.setSceneType("luxury_furniture");
+                spec.setMood("studio_commercial");
+                spec.setFocalLengthMm(65.0f);
+                spec.setUseVolumetrics(false);
+            } else if (lowerPrompt.contains("superhero") || lowerPrompt.contains("character") || lowerPrompt.contains("humanoid")) {
+                spec.setSceneType("stylized_character");
+                spec.setMood("heroic_dramatic");
+                spec.setFocalLengthMm(50.0f);
+            } else {
+                spec.setSceneType("organic_environment");
+                spec.setMood("misty_dawn");
+                spec.setFocalLengthMm(50.0f);
+            }
+
+            // Generate modular worker sub-scripts via BlenderWorkerAgent
+            BlenderWorkerAgent.WorkerScripts modularScripts = 
+                    BlenderWorkerAgent.generateModularScripts(userPrompt, spec, assetId);
+
+            // 2. Build Procedural Scene Script
             StringBuilder defaultBpyScript = new StringBuilder();
             defaultBpyScript.append("import bpy\n");
             defaultBpyScript.append("import os\n");
@@ -94,6 +122,7 @@ public class PromptInterpreter {
 
             if (lowerPrompt.contains("superhero") || lowerPrompt.contains("character") || lowerPrompt.contains("humanoid") || lowerPrompt.contains("biped")) {
                 defaultBpyScript.append("# --- High-Detail Procedural Rigged Superhero Character ---\n");
+                defaultBpyScript.append("# Materials\n");
                 defaultBpyScript.append("mat_suit = bpy.data.materials.new(name='Suit_Material')\n");
                 defaultBpyScript.append("mat_suit.use_nodes = True\n");
                 defaultBpyScript.append("bsdf_suit = mat_suit.node_tree.nodes.get('Principled BSDF')\n");
@@ -530,15 +559,33 @@ public class PromptInterpreter {
             defaultBpyScript.append("fill = bpy.context.active_object\n");
             defaultBpyScript.append("fill.data.energy = 800.0\n\n");
 
-            defaultBpyScript.append("# Export scene directly to GLTF/GLB binary\n");
+            defaultBpyScript.append("# Dual Render Deliverables: Render Still Image (PNG) + Export 3D Mesh (GLB)\n");
+            defaultBpyScript.append("bpy.context.scene.render.resolution_x = 1280\n");
+            defaultBpyScript.append("bpy.context.scene.render.resolution_y = 720\n");
+            defaultBpyScript.append("bpy.context.scene.render.filepath = 'output/render.png'\n");
+            defaultBpyScript.append("try:\n");
+            defaultBpyScript.append("    bpy.ops.render.render(write_still=True)\n");
+            defaultBpyScript.append("except Exception as re:\n");
+            defaultBpyScript.append("    print(f'Render still warning: {re}')\n\n");
             defaultBpyScript.append("bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n");
+
+            // Build ToolOperation incorporating both your procedural script AND the modular sub-scripts
+            ToolOperation cloudOp = new ToolOperation("blender.cloud_generate")
+                    .setParam("prompt", userPrompt)
+                    .setParam("assetId", assetId)
+                    .setParam("bpyScript", defaultBpyScript.toString())
+                    .setParam("w1HeroScript", modularScripts.heroScript)
+                    .setParam("w2EnvScript", modularScripts.environmentScript)
+                    .setParam("w3LightScript", modularScripts.lightingAndRenderScript)
+                    .setParam("compositeMasterScript", modularScripts.compositeMasterScript)
+                    .setParam("seedHero", spec.getSeedHero())
+                    .setParam("seedVegetation", spec.getSeedVegetation())
+                    .setParam("seedLighting", spec.getSeedLighting())
+                    .setParam("directorSpec", spec.toJson().toString());
 
             TaskNode cloudNode = new TaskNode(cloudTaskId, "blender.cloud_generate",
                     "Execute procedural Blender script to sculpt 3D asset via headless worker",
-                    new ToolOperation("blender.cloud_generate")
-                            .setParam("prompt", userPrompt)
-                            .setParam("assetId", assetId)
-                            .setParam("bpyScript", defaultBpyScript.toString()));
+                    cloudOp);
 
             cloudNode.addDependency(initialDependency);
             graph.addTask(cloudNode);
@@ -710,7 +757,7 @@ public class PromptInterpreter {
                 String toolId = call.getToolId().toLowerCase();
                 
                 // Identify modification, skeleton, rig, animation, validation, and export tasks
-                boolean isModifier = toolId.contains("material.set_properties") ||
+                boolean isModifier = toolId.contains("material.") ||
                                      toolId.contains("skeleton.") ||
                                      toolId.contains("rig.") ||
                                      toolId.contains("animation.") ||
