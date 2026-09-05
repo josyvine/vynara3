@@ -32,36 +32,69 @@ jobs:
         env:
           BPY_SCRIPT: ${{ github.event.client_payload.bpy_script }}
           ASSET_ID: ${{ github.event.client_payload.asset_id }}
+          W1_HERO: ${{ github.event.client_payload.w1HeroScript }}
+          W2_ENV: ${{ github.event.client_payload.w2EnvScript }}
+          W3_LIGHT: ${{ github.event.client_payload.w3LightScript }}
         run: |
           mkdir -p output
           
-          # Write the Python script using a quoted heredoc to prevent bash string mangling and preserve formatting
+          # Write the Python script using a quoted heredoc to prevent bash string mangling
           python3 - << 'EOF'
           import os
 
           bpy_script = os.environ.get('BPY_SCRIPT', '')
+          w1 = os.environ.get('W1_HERO', '')
+          w2 = os.environ.get('W2_ENV', '')
+          w3 = os.environ.get('W3_LIGHT', '')
 
-          # Fallback script if payload script is empty
+          # If modular sub-scripts are passed separately, assemble them
+          if not bpy_script.strip() and (w1.strip() or w2.strip() or w3.strip()):
+              bpy_script = (
+                  "import bpy, os, math, random\n"
+                  "import addon_utils\n\n"
+                  "try:\n"
+                  "    addon_utils.enable('archimesh')\n"
+                  "    addon_utils.enable('rigify')\n"
+                  "except Exception as e: print(f'Addon note: {e}')\n\n"
+                  "os.makedirs('output', exist_ok=True)\n"
+                  "bpy.ops.object.select_all(action='SELECT')\n"
+                  "bpy.ops.object.delete(use_global=False)\n\n"
+                  f"{w1}\n\n{w2}\n\n{w3}\n"
+              )
+
+          # Fallback script if payload script is completely empty
           if not bpy_script.strip():
-              bpy_script = "import bpy\nimport os\nos.makedirs('output', exist_ok=True)\nbpy.ops.mesh.primitive_cube_add(size=2)\nbpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
+              bpy_script = (
+                  "import bpy, os\n"
+                  "os.makedirs('output', exist_ok=True)\n"
+                  "bpy.ops.object.select_all(action='SELECT')\n"
+                  "bpy.ops.object.delete(use_global=False)\n"
+                  "bpy.ops.mesh.primitive_cube_add(size=2)\n"
+                  "bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
+              )
 
-          # Write clean script to run_task.py
+          # Ensure GLTF export and render commands exist
+          if 'export_scene.gltf' not in bpy_script:
+              bpy_script += "\nimport bpy, os\nos.makedirs('output', exist_ok=True)\nbpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
+
           with open('run_task.py', 'w', encoding='utf-8') as f:
               f.write(bpy_script)
-              if not bpy_script.endswith('\n'):
-                  f.write('\n')
-              if 'export_scene.gltf' not in bpy_script:
-                  f.write("import os\nimport bpy\nos.makedirs('output', exist_ok=True)\nbpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n")
 
           EOF
 
-          # Run headless Blender
-          /opt/blender/blender -b -P run_task.py
+          # Run headless Blender and capture output log
+          /opt/blender/blender -b -P run_task.py 2>&1 | tee output/blender_execution.log
 
-      # Step 4: Upload generated GLB file so the app can download it
-      - name: Upload Finished Model
+          # Verify output files
+          if [ ! -f output/model.glb ]; then
+            echo "ERROR: Blender failed to output model.glb" > output/error.txt
+            tail -n 25 output/blender_execution.log >> output/error.txt
+          fi
+
+      # Step 4: Upload both GLB model and Cycles render still image
+      - name: Upload Finished Model and Render Preview
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.client_payload.asset_id }}
-          path: output/model.glb
+          path: output/
           if-no-files-found: error
