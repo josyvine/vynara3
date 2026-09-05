@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <!-- 1. MINIMIZED STATE: Floating Circular Terminal Badge -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/layout_console_minimized"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_margin="16dp"
+        android:clickable="true"
+        android:focusable="true"
+        app:cardBackgroundColor="#12131C"
+        app:cardCornerRadius="28dp"
+        app:cardElevation="6dp"
+        app:strokeColor="#00E5FF"
+        app:strokeWidth="1.5dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="&gt;_"
+            android:textColor="#00E5FF"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+    </com.google.android.material.card.MaterialCardView>
+
+    <!-- 2. EXPANDED STATE: Monospace Terminal Console Card -->
+    <com.google.android.material.card.MaterialCardView
+        android:id="@+id/layout_console_expanded"
+        android:layout_width="320dp"
+        android:layout_height="240dp"
+        android:layout_margin="16dp"
+        app:cardBackgroundColor="#12131C"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="8dp"
+        app:strokeColor="#2C2E3E"
+        app:strokeWidth="1dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical">
+
+            <!-- Drag Handle & Controls Header Bar -->
+            <LinearLayout
+                android:id="@+id/layout_console_header"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:background="#1A1C28"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingHorizontal="12dp">
+
+                <!-- Cyan Terminal Indicator -->
+                <View
+                    android:layout_width="8dp"
+                    android:layout_height="8dp"
+                    android:background="#00E5FF" />
+
+                <!-- Console Header Title -->
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:text="Vynara Diagnostic Console"
+                    android:textColor="#E0E0E0"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
+
+                <!-- Clear Buffer Button -->
+                <TextView
+                    android:id="@+id/btn_console_clear"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingHorizontal="10dp"
+                    android:text="Clear"
+                    android:textColor="#90A4AE"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:clickable="true"
+                    android:focusable="true" />
+
+                <!-- Minimize Button -->
+                <TextView
+                    android:id="@+id/btn_console_minimize"
+                    android:layout_width="wrap_content"
+                    android:layout_height="match_parent"
+                    android:gravity="center"
+                    android:paddingHorizontal="10dp"
+                    android:text="▼"
+                    android:textColor="#00E5FF"
+                    android:textSize="10sp"
+                    android:clickable="true"
+                    android:focusable="true" />
+            </LinearLayout>
+
+            <!-- Separator Line -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#2C2E3E" />
+
+            <!-- Monospace Terminal Scroll Output -->
+            <ScrollView
+                android:id="@+id/scroll_console_output"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#0A0B10"
+                android:fillViewport="true"
+                android:scrollbarThumbVertical="@android:color/darker_gray">
+
+                <TextView
+                    android:id="@+id/tv_console_output"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="8dp"
+                    android:fontFamily="monospace"
+                    android:textColor="#FFFFFF"
+                    android:textSize="10sp" />
+            </ScrollView>
+        </LinearLayout>
+    </com.google.android.material.card.MaterialCardView>
+</RelativeLayout>
