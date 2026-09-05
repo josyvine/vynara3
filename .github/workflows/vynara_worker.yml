@@ -1,0 +1,67 @@
+name: Vynara Blender Worker
+
+on:
+  repository_dispatch:
+    types: [vynara_generate]
+
+jobs:
+  build_3d_asset:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 1: Check GitHub Actions Cache (Restores in ~3s on Run 2+)
+      - name: Restore Blender Cache
+        id: blender-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/blender
+          key: blender-4.2-linux-x64
+
+      # Step 2: Download ONLY on first run (Skipped on all future runs)
+      - name: Download Blender Binary
+        if: steps.blender-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo mkdir -p /opt/blender
+          curl -sL https://download.blender.org/release/Blender4.2/blender-4.2.0-linux-x64.tar.xz | sudo tar -xJ --strip-components=1 -C /opt/blender
+
+      # Step 3: Run directly from cached binary safely
+      - name: Execute Blender Python Script
+        env:
+          BPY_SCRIPT: ${{ github.event.client_payload.bpy_script }}
+          ASSET_ID: ${{ github.event.client_payload.asset_id }}
+        run: |
+          mkdir -p output
+          
+          # Write the Python script using a quoted heredoc to prevent bash string mangling and preserve formatting
+          python3 - << 'EOF'
+          import os
+
+          bpy_script = os.environ.get('BPY_SCRIPT', '')
+
+          # Fallback script if payload script is empty
+          if not bpy_script.strip():
+              bpy_script = "import bpy\nimport os\nos.makedirs('output', exist_ok=True)\nbpy.ops.mesh.primitive_cube_add(size=2)\nbpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
+
+          # Write clean script to run_task.py
+          with open('run_task.py', 'w', encoding='utf-8') as f:
+              f.write(bpy_script)
+              if not bpy_script.endswith('\n'):
+                  f.write('\n')
+              if 'export_scene.gltf' not in bpy_script:
+                  f.write("import os\nimport bpy\nos.makedirs('output', exist_ok=True)\nbpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n")
+
+          EOF
+
+          # Run headless Blender
+          /opt/blender/blender -b -P run_task.py
+
+      # Step 4: Upload generated GLB file so the app can download it
+      - name: Upload Finished Model
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.client_payload.asset_id }}
+          path: output/model.glb
+          if-no-files-found: error
