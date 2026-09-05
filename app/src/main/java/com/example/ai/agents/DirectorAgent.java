@@ -1,5 +1,9 @@
 package com.example.ai.agents;
 
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.util.Base64;
+
 import com.example.ai.ApiKeyManager;
 import com.example.ai.GeminiApiClient;
 import com.example.ai.protocol.AIDirectorSpec;
@@ -7,6 +11,10 @@ import com.example.utils.VynaraLogger;
 
 import org.json.JSONObject;
 
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.util.ArrayList;
 import java.util.List;
 
 public class DirectorAgent {
@@ -24,8 +32,8 @@ public class DirectorAgent {
     }
 
     /**
-     * Phase 1: Formulates the scene specification without touching 3D code.
-     * Analyzes composition, lighting, camera, palette, and seeds.
+     * Phase 1: Formulates the scene specification using Gemini Vision.
+     * Encodes real reference photos to Base64 so the AI visually analyzes the scene.
      */
     public void formulateDirectorSpec(final String userPrompt,
                                       final String style,
@@ -43,16 +51,27 @@ public class DirectorAgent {
 
         final String activeModel = apiKeyManager.getSelectedModel();
 
+        // 1. Read and encode reference images to Base64 for Gemini Vision
+        List<String> base64Images = new ArrayList<>();
+        if (referenceImageUris != null && !referenceImageUris.isEmpty()) {
+            for (String uriOrPath : referenceImageUris) {
+                String b64 = readImageAsBase64(uriOrPath);
+                if (b64 != null && !b64.isEmpty()) {
+                    base64Images.add(b64);
+                }
+            }
+        }
+
         String systemInstruction = "You are the 3D Master Art Director & Spatial Architect.\n" +
                 "YOUR ROLE:\n" +
                 "- You NEVER write Python code or Blender operators.\n" +
                 "- Your sole job is to design the visual contract, spatial constraints, and camera framing for the scene.\n" +
-                "- Analyze the user's prompt to produce a photorealistic DIRECTOR SPECIFICATION.\n" +
+                "- If reference images are provided, visually inspect the architecture, lighting angles, water features, materials, and composition to replicate them.\n" +
                 "CINEMATIC RULES:\n" +
                 "1. Camera: Pick an intentional focal length (35mm for wide architecture/landscapes, 50mm for natural perspective, 85mm for furniture/characters).\n" +
-                "2. Depth of Field (DOF): Use a shallow aperture (f/1.4 to f/2.8, default f/1.8) focused on the hero subject to create background blur.\n" +
+                "2. Depth of Field (DOF): Use a shallow aperture (f/1.4 to f/2.8, default f/1.8) focused on the hero subject.\n" +
                 "3. Volumetrics & Lighting: For atmospheric scenes, set useVolumetrics=true with density between 0.01 and 0.025 to create sunbeams. Set low sun angles (elevation 15-25 degrees) for dramatic long shadows.\n" +
-                "4. Color Palette: Output three harmonic hex colors (primary structure, secondary detail/earth, accent highlight).\n" +
+                "4. Color Palette: Output three harmonic hex colors (primary structure, secondary detail/earth, accent highlight) matching the visual image.\n" +
                 "5. Modular Seeds: Assign separate integer random seeds (e.g., 101, 202, 303, 404) for terrain, hero subject, vegetation, and lighting.\n\n" +
                 "RETURN A RAW STRICT JSON OBJECT ONLY. DO NOT WRAP IN MARKDOWN (NO ```json):\n" +
                 "{\n" +
@@ -90,23 +109,23 @@ public class DirectorAgent {
         StringBuilder promptBuilder = new StringBuilder();
         promptBuilder.append("USER PROMPT: ").append(userPrompt).append("\n");
         promptBuilder.append("REQUESTED STYLE: ").append(style).append("\n");
-        if (referenceImageUris != null && !referenceImageUris.isEmpty()) {
-            promptBuilder.append("REFERENCE IMAGES: ").append(referenceImageUris.size()).append(" visual reference(s) attached.\n");
-            promptBuilder.append("Note: Emulate professional depth of field, natural lighting contrast, and organic material textures from the visual references.\n");
+        if (!base64Images.isEmpty()) {
+            promptBuilder.append("VISUAL REFERENCE ATTACHED: Inspect the attached image. Match the architectural features, pool illumination, materials, and lighting mood.\n");
         }
 
-        VynaraLogger.system("DirectorAgent: Formulating live scene specification via Gemini [" + activeModel + "]...");
+        VynaraLogger.system("DirectorAgent: Formulating live scene specification via Gemini Vision [" + activeModel + "] with " + base64Images.size() + " image(s)...");
 
+        // 2. Dispatch Multimodal Request with Base64 Images
         apiClient.generateStructuredJson(
                 apiKeyManager.getApiKey(),
                 activeModel,
                 systemInstruction,
                 promptBuilder.toString(),
+                base64Images,
                 new GeminiApiClient.ApiCallback<String>() {
                     @Override
                     public void onSuccess(String jsonResult) {
                         try {
-                            // Sanitize Markdown code block formatting if Gemini wraps output
                             String cleanJson = jsonResult.trim();
                             if (cleanJson.startsWith("```json")) {
                                 cleanJson = cleanJson.substring(7);
@@ -138,5 +157,48 @@ public class DirectorAgent {
                     }
                 }
         );
+    }
+
+    /**
+     * Reads a cached local file path, scales it down to max 1024px for fast network latency,
+     * and encodes it to a Base64 JPEG string.
+     */
+    private String readImageAsBase64(String pathOrUri) {
+        if (pathOrUri == null || pathOrUri.trim().isEmpty()) return null;
+
+        try {
+            File imageFile = new File(pathOrUri);
+            if (!imageFile.exists() || imageFile.length() == 0) {
+                return null;
+            }
+
+            // Decode image bounds first to prevent memory OOM
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+
+            int maxDim = Math.max(options.outWidth, options.outHeight);
+            int inSampleSize = 1;
+            while (maxDim / inSampleSize > 1024) {
+                inSampleSize *= 2;
+            }
+
+            options.inJustDecodeBounds = false;
+            options.inSampleSize = inSampleSize;
+            Bitmap bitmap = BitmapFactory.decodeFile(imageFile.getAbsolutePath(), options);
+
+            if (bitmap == null) return null;
+
+            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream);
+            byte[] imageBytes = outputStream.toByteArray();
+            bitmap.recycle();
+
+            return Base64.encodeToString(imageBytes, Base64.NO_WRAP);
+
+        } catch (Exception e) {
+            VynaraLogger.e("DirectorAgent: Error reading reference image: " + e.getMessage());
+            return null;
+        }
     }
 }
