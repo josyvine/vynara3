@@ -1,0 +1,6 @@
+{
+  "name": "Vynara",
+  "description": "AI-Powered Universal 3D Artist & Creation Studio",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
