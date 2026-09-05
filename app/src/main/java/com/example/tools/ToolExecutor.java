@@ -177,7 +177,7 @@ public class ToolExecutor {
                     obj.setMaterial(mat);
                     return true;
                 }
-                return true; // Non-fatal fallback
+                return true;
             }
 
             case "material.create": {
@@ -289,6 +289,9 @@ public class ToolExecutor {
             case "blender.cloud_generate": {
                 String prompt = op.getStringParam("prompt", "3D asset");
                 String bpyScript = op.getStringParam("bpyScript", "");
+                if (bpyScript.isEmpty()) {
+                    bpyScript = op.getStringParam("compositeMasterScript", "");
+                }
                 String assetId = op.getStringParam("assetId", "asset_" + System.currentTimeMillis());
 
                 VynaraLogger.system("Executing blender.cloud_generate: assetId=" + assetId + ", prompt=" + prompt);
@@ -376,7 +379,7 @@ public class ToolExecutor {
 
                                 @Override
                                 public void onProgress(int percentage, long bytesRead, long totalBytes) {
-                                    VynaraLogger.system("Downloading GLB Artifact: " + percentage + "% (" + bytesRead + "/" + totalBytes + " bytes)");
+                                    VynaraLogger.system("Downloading Artifact: " + percentage + "% (" + bytesRead + "/" + totalBytes + " bytes)");
                                 }
 
                                 @Override
@@ -392,6 +395,12 @@ public class ToolExecutor {
                                         }
                                         engine.getSceneManager().updateWorldTransforms();
                                         autoFrameCameraOnScene();
+
+                                        File renderImg = GitHubWorkflowBridge.getAssociatedRenderImage(downloadedGlbFile);
+                                        if (renderImg != null) {
+                                            VynaraLogger.system("ToolExecutor: Photorealistic Cycles preview render verified at " + renderImg.getName());
+                                        }
+
                                         success.set(true);
                                     } catch (Exception ex) {
                                         VynaraLogger.e("Failed to import downloaded GLB into active scene", ex);
