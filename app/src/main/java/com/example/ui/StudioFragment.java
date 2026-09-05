@@ -19,6 +19,7 @@ import androidx.fragment.app.Fragment;
 import com.example.MainActivity;
 import com.example.R;
 import com.example.character.Character;
+import com.example.cloud.GitHubWorkflowBridge;
 import com.example.engine.Camera;
 import com.example.engine.GLTFImporter;
 import com.example.engine.Material;
@@ -51,6 +52,8 @@ public class StudioFragment extends Fragment {
     private Runnable animRunnable;
     private ScaleGestureDetector scaleGestureDetector;
 
+    private File currentRenderImageFile = null;
+
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
@@ -61,7 +64,7 @@ public class StudioFragment extends Fragment {
     public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
         super.onViewCreated(view, savedInstanceState);
 
-        // Phase 1 Alignment: Fetch the single, unified shared project runtime instance
+        // Fetch unified project runtime instance
         if (getActivity() instanceof MainActivity) {
             runtime = ((MainActivity) getActivity()).getProjectRuntime();
         } else {
@@ -84,12 +87,12 @@ public class StudioFragment extends Fragment {
         glSurfaceView.setRenderer(renderer);
         glSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
 
-        // Enable 360-degree Touch Viewport Camera Orbit Navigation with Pinch-to-Zoom
+        // Enable Touch Viewport Camera Orbit Navigation with Pinch-to-Zoom
         setupViewportTouchOrbitGesture();
 
         updateStudioStatsUI();
 
-        // Phase 13 Alignment: Undo & Redo transaction history
+        // Undo & Redo transaction history
         View btnUndo = view.findViewById(R.id.btn_undo);
         if (btnUndo != null) {
             btnUndo.setOnClickListener(v -> {
@@ -114,7 +117,7 @@ public class StudioFragment extends Fragment {
             });
         }
 
-        // Phase 18 Alignment: Real GLTF scene exporter
+        // Real GLTF scene exporter
         View btnExport = view.findViewById(R.id.btn_export_gltf);
         if (btnExport != null) {
             btnExport.setOnClickListener(v -> exportActiveSceneToLocalGltf());
@@ -376,13 +379,34 @@ public class StudioFragment extends Fragment {
     }
 
     /**
-     * Spawns a procedural object into the active scene dynamically (used by AI Assistant).
+     * Spawns a procedural or primitive object into the scene (called by AI Assistant).
+     * Calculates smart placement in front of the camera if coordinates are default.
      */
     public boolean spawnProceduralObject(String type, String name, float x, float y, float z, String colorHex) {
         if (engine == null) return false;
         try {
             runtime.getTransactionManager().beginTransaction("Spawn " + name);
-            SceneObject obj = engine.createProceduralStructure(type, name);
+
+            // Smart placement: if position is at default (0,0,0), position it in front of the camera
+            if (x == 0f && y == 0f && z == 0f && engine.getCameraManager() != null) {
+                Camera cam = engine.getCameraManager().getActiveCamera();
+                if (cam != null && cam.getTarget() != null) {
+                    float[] target = cam.getTarget();
+                    x = target[0] + 0.8f;
+                    y = target[1];
+                    z = target[2] + 0.8f;
+                }
+            }
+
+            SceneObject obj;
+            String lowerType = type != null ? type.toLowerCase() : "cube";
+
+            if (lowerType.contains("cube") || lowerType.contains("sphere") || lowerType.contains("cylinder") || lowerType.contains("plane")) {
+                obj = engine.createPrimitive(lowerType.replace("primitive_", ""), 1.5f, 1.5f, 1.5f);
+            } else {
+                obj = engine.createProceduralStructure(lowerType, name != null ? name : "Prop");
+            }
+
             if (obj != null) {
                 obj.getTransform().setPosition(x, y, z);
                 if (colorHex != null && !colorHex.isEmpty()) {
@@ -404,6 +428,7 @@ public class StudioFragment extends Fragment {
     public void clearScene() {
         if (engine != null && engine.getSceneManager() != null) {
             engine.getSceneManager().getActiveScene().getObjects().clear();
+            engine.getSceneManager().selectObject(null);
             if (runtime != null && runtime.getCharacterManager() != null) {
                 runtime.getCharacterManager().getCharacterMap().clear();
             }
@@ -441,12 +466,22 @@ public class StudioFragment extends Fragment {
                 }
             }
 
+            // Check if accompanying Cycles render still image exists
+            currentRenderImageFile = GitHubWorkflowBridge.getAssociatedRenderImage(glbFile);
+            if (currentRenderImageFile != null) {
+                VynaraLogger.system("StudioFragment: Photorealistic Cycles still render available at: " + currentRenderImageFile.getName());
+            }
+
             runtime.getTransactionManager().commitTransaction();
 
             if (getActivity() != null) {
                 getActivity().runOnUiThread(() -> {
                     updateStudioStatsUI();
-                    Toast.makeText(getContext(), "Imported: " + glbFile.getName(), Toast.LENGTH_SHORT).show();
+                    String msg = "Imported: " + glbFile.getName();
+                    if (currentRenderImageFile != null) {
+                        msg += " (Cycles Render Ready)";
+                    }
+                    Toast.makeText(getContext(), msg, Toast.LENGTH_SHORT).show();
                 });
             }
 
@@ -456,6 +491,10 @@ public class StudioFragment extends Fragment {
                 getActivity().runOnUiThread(() -> Toast.makeText(getContext(), "Import error: " + e.getMessage(), Toast.LENGTH_LONG).show());
             }
         }
+    }
+
+    public File getCurrentRenderImageFile() {
+        return currentRenderImageFile;
     }
 
     public void updateStudioStatsUI() {
