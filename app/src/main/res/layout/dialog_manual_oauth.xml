@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/bg_dialog_rounded"
+    android:padding="24dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Manual OAuth Authorization Code"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="If browser redirect did not auto-return to app, copy the 'code' parameter from the URL bar (vynara://oauth-callback?code=...) and paste it below:"
+        android:textColor="#9CA3AF"
+        android:textSize="13sp"
+        android:lineSpacingExtra="2dp"
+        android:layout_marginBottom="20dp" />
+
+    <!-- Code Input Box -->
+    <EditText
+        android:id="@+id/et_manual_oauth_code"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@drawable/bg_input_field"
+        android:hint="OAuth Code"
+        android:textColorHint="#4B5563"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:paddingHorizontal="12dp"
+        android:singleLine="true"
+        android:inputType="textNoSuggestions"
+        android:layout_marginBottom="24dp" />
+
+    <!-- Action Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end">
+
+        <Button
+            android:id="@+id/btn_manual_oauth_cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:text="Cancel"
+            android:textAllCaps="false"
+            android:textColor="#9CA3AF"
+            android:backgroundTint="#00000000"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_marginEnd="8dp" />
+
+        <Button
+            android:id="@+id/btn_manual_oauth_submit"
+            android:layout_width="wrap_content"
+            android:layout_height="44dp"
+            android:text="Submit Code"
+            android:textAllCaps="false"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:backgroundTint="#2563EB"
+            app:cornerRadius="8dp" />
+    </LinearLayout>
+
+</LinearLayout>
