@@ -478,7 +478,7 @@ public class GitHubWorkflowBridge {
 
             @Override
             public void onSuccess(File downloadedFile) {
-                VynaraLogger.system("GitHubWorkflowBridge: GLB downloaded and extracted successfully: " + downloadedFile.getAbsolutePath());
+                VynaraLogger.system("GitHubWorkflowBridge: Artifact extracted successfully: " + downloadedFile.getAbsolutePath());
                 callback.onSuccess(downloadedFile);
             }
 
@@ -565,13 +565,18 @@ public class GitHubWorkflowBridge {
         });
     }
 
+    /**
+     * Extracts both the 3D model (.glb/.gltf) AND any rendered image (.png/.jpg) from the zip archive.
+     */
     private boolean extractGlbFromZip(File zipFile, File destinationGlbFile) {
+        boolean glbFound = false;
         try (ZipInputStream zis = new ZipInputStream(new BufferedInputStream(new java.io.FileInputStream(zipFile)))) {
             ZipEntry entry;
             byte[] buffer = new byte[8192];
 
             while ((entry = zis.getNextEntry()) != null) {
                 String fileName = entry.getName().toLowerCase();
+
                 if (fileName.endsWith(".glb") || fileName.endsWith(".gltf")) {
                     if (destinationGlbFile.getParentFile() != null && !destinationGlbFile.getParentFile().exists()) {
                         destinationGlbFile.getParentFile().mkdirs();
@@ -584,14 +589,40 @@ public class GitHubWorkflowBridge {
                         }
                         fos.flush();
                     }
-                    zis.closeEntry();
-                    return true;
+                    glbFound = true;
+                } else if (fileName.endsWith(".png") || fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+                    // Extract cinematic Cycles still render alongside the GLB model
+                    String renderName = destinationGlbFile.getName();
+                    int dotIdx = renderName.lastIndexOf('.');
+                    String baseName = (dotIdx > 0) ? renderName.substring(0, dotIdx) : renderName;
+                    File destinationImgFile = new File(destinationGlbFile.getParentFile(), baseName + ".png");
+
+                    try (FileOutputStream fos = new FileOutputStream(destinationImgFile)) {
+                        int len;
+                        while ((len = zis.read(buffer)) > 0) {
+                            fos.write(buffer, 0, len);
+                        }
+                        fos.flush();
+                        VynaraLogger.system("GitHubWorkflowBridge: Extracted cinematic Cycles preview image: " + destinationImgFile.getName());
+                    }
                 }
                 zis.closeEntry();
             }
         } catch (Exception e) {
             VynaraLogger.e("ZIP extraction error: " + e.getMessage(), e);
         }
-        return false;
+        return glbFound;
+    }
+
+    /**
+     * Helper to retrieve the rendered Cycles preview image if it was extracted alongside the GLB.
+     */
+    public static File getAssociatedRenderImage(File glbFile) {
+        if (glbFile == null || glbFile.getParentFile() == null) return null;
+        String name = glbFile.getName();
+        int dotIdx = name.lastIndexOf('.');
+        String baseName = (dotIdx > 0) ? name.substring(0, dotIdx) : name;
+        File img = new File(glbFile.getParentFile(), baseName + ".png");
+        return (img.exists() && img.length() > 0) ? img : null;
     }
 }
