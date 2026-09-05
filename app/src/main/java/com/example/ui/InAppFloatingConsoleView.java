@@ -1,5 +1,7 @@
 package com.example.ui;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.text.Html;
 import android.util.AttributeSet;
@@ -10,6 +12,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -71,14 +74,65 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
                 btnClear.setOnClickListener(v -> VynaraLogger.clear());
             }
 
+            // Bind Copy Button (with dynamic ID fallback)
+            View btnCopy = findViewById(R.id.btn_console_copy);
+            if (btnCopy == null) {
+                int copyResId = getResources().getIdentifier("btn_console_copy", "id", getContext().getPackageName());
+                if (copyResId != 0) {
+                    btnCopy = findViewById(copyResId);
+                }
+            }
+            if (btnCopy != null) {
+                btnCopy.setOnClickListener(v -> copyLogsToClipboard());
+            }
+
+            // Long-press log area to copy as well
+            if (tvLogOutput != null) {
+                tvLogOutput.setOnLongClickListener(v -> {
+                    copyLogsToClipboard();
+                    return true;
+                });
+            }
+
             View dragHeader = findViewById(R.id.layout_console_header);
             if (dragHeader != null) {
                 setupDragGesture(dragHeader);
             }
         }
 
-        // Initialize view state as minimized on app startup to prevent initial screen clutter
+        // Initialize view state as minimized on app startup
         setExpandedState(false);
+    }
+
+    /**
+     * Copies all formatted log history with timestamps directly to the Android clipboard.
+     */
+    public void copyLogsToClipboard() {
+        StringBuilder sb = new StringBuilder();
+        List<VynaraLogger.LogEntry> history = VynaraLogger.getCopyOfLogs();
+
+        for (VynaraLogger.LogEntry entry : history) {
+            if (entry != null) {
+                String prefix = entry.getFormattedTime() + " " + (entry.getTag() != null ? entry.getTag().name() : "LOG");
+                sb.append(prefix).append(": ").append(entry.getMessage()).append("\n");
+            }
+        }
+
+        if (sb.length() == 0 && tvLogOutput != null && tvLogOutput.getText() != null) {
+            sb.append(tvLogOutput.getText().toString());
+        }
+
+        if (sb.length() == 0) {
+            Toast.makeText(getContext(), "Console log is empty", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
+        if (clipboard != null) {
+            ClipData clip = ClipData.newPlainText("Vynara Diagnostic Logs", sb.toString());
+            clipboard.setPrimaryClip(clip);
+            Toast.makeText(getContext(), "Diagnostic logs copied to clipboard!", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void setExpandedState(boolean expanded) {
@@ -107,7 +161,7 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
                 case MotionEvent.ACTION_DOWN:
                     lastTouchX = event.getRawX();
                     lastTouchY = event.getRawY();
-                    return false; // Return false so clicking registers on child click-listeners
+                    return false;
 
                 case MotionEvent.ACTION_MOVE:
                     float deltaX = event.getRawX() - lastTouchX;
@@ -123,7 +177,7 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
 
                     lastTouchX = event.getRawX();
                     lastTouchY = event.getRawY();
-                    return true; // Consume dragging movement event
+                    return true;
             }
             return false;
         });
@@ -206,7 +260,7 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
 
     @Override
     public void onLogAdded(VynaraLogger.LogEntry entry) {
-        // Safe UI thread posting for logs emitted from background OkHttp / Cloud threads
+        // Safe UI thread posting for logs emitted from background threads
         post(() -> {
             if (isAttachedToWindow()) {
                 appendLog(entry);
