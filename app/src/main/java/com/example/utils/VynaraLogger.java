@@ -56,7 +56,7 @@ public class VynaraLogger {
         void onLogsCleared();
     }
 
-    private static final int MAX_LOG_CAPACITY = 300;
+    private static final int MAX_LOG_CAPACITY = 500;
     private static final List<LogEntry> logBuffer = new ArrayList<>();
     private static final List<LogListener> listeners = new CopyOnWriteArrayList<>();
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -81,7 +81,11 @@ public class VynaraLogger {
     public static void cloud(String msg) { log(LogTag.CLOUD, LogLevel.INFO, msg); }
     public static void cloud(LogLevel level, String msg) { log(LogTag.CLOUD, level, msg); }
 
-    // General purpose error logging methods required by background execution and orchestration layers
+    // General purpose warning & error logging methods
+    public static void w(String msg) {
+        log(LogTag.SYSTEM, LogLevel.WARNING, msg);
+    }
+
     public static void e(String msg) {
         log(LogTag.SYSTEM, LogLevel.ERROR, msg);
     }
@@ -110,6 +114,26 @@ public class VynaraLogger {
                 } catch (Exception ignored) {}
             }
         });
+    }
+
+    /**
+     * Compiles all active logs into a single formatted string for copying to clipboard.
+     */
+    public static synchronized String getAllLogsAsString() {
+        StringBuilder sb = new StringBuilder();
+        for (LogEntry entry : logBuffer) {
+            if (entry != null) {
+                sb.append(entry.getFormattedTime())
+                  .append(" [").append(entry.getTag().name()).append("] ");
+                if (entry.getLevel() == LogLevel.ERROR) {
+                    sb.append("[ERROR] ");
+                } else if (entry.getLevel() == LogLevel.WARNING) {
+                    sb.append("[WARN] ");
+                }
+                sb.append(entry.getMessage()).append("\n");
+            }
+        }
+        return sb.toString();
     }
 
     public static synchronized List<LogEntry> getCopyOfLogs() {
