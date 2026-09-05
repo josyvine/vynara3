@@ -1,6 +1,7 @@
 package com.example.ui;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
@@ -26,7 +27,11 @@ import androidx.fragment.app.Fragment;
 import com.example.MainActivity;
 import com.example.R;
 import com.example.ai.ApiKeyManager;
+import com.example.utils.VynaraLogger;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -95,15 +100,12 @@ public class CreateFragment extends Fragment {
 
         setupSpinners();
 
-        // Dynamically resolve and update the active model sub-header from ApiKeyManager
+        // Dynamically resolve and update active model sub-header from ApiKeyManager
         if (getContext() != null) {
             ApiKeyManager keyMgr = new ApiKeyManager(getContext());
             String activeModel = keyMgr.getSelectedModel();
             
-            // Primary ID lookup matching fragment_create.xml: R.id.tv_model_badge
             TextView tvConnectionStatus = view.findViewById(R.id.tv_model_badge);
-            
-            // Fallback checking for backward compatibility
             if (tvConnectionStatus == null) {
                 tvConnectionStatus = view.findViewById(R.id.tv_connection_status);
             }
@@ -116,11 +118,11 @@ public class CreateFragment extends Fragment {
 
             if (tvConnectionStatus != null) {
                 if (keyMgr.hasApiKey()) {
-                    String displayName = (activeModel == null || activeModel.trim().isEmpty()) ? "No Model Selected" : activeModel;
+                    String displayName = (activeModel == null || activeModel.trim().isEmpty()) ? "gemini-1.5-flash" : activeModel;
                     tvConnectionStatus.setText("AI: " + displayName + " • Connected");
                     tvConnectionStatus.setTextColor(0xFF00E676); // Green connection color
                 } else {
-                    tvConnectionStatus.setText("AI: Disconnected");
+                    tvConnectionStatus.setText("AI: Disconnected (No API Key)");
                     tvConnectionStatus.setTextColor(0xFFFF5252); // Red disconnection color
                 }
             }
@@ -129,6 +131,17 @@ public class CreateFragment extends Fragment {
         View btnAddRef = view.findViewById(R.id.btn_add_reference);
         if (btnAddRef != null) {
             btnAddRef.setOnClickListener(v -> checkPermissionAndPickImages());
+        }
+
+        // Tap reference count badge to clear attached images
+        if (tvReferenceCount != null) {
+            tvReferenceCount.setOnClickListener(v -> {
+                if (!selectedImageUris.isEmpty()) {
+                    selectedImageUris.clear();
+                    updateReferenceUI();
+                    Toast.makeText(getContext(), "Reference images cleared", Toast.LENGTH_SHORT).show();
+                }
+            });
         }
 
         // Accordion toggle
@@ -145,7 +158,7 @@ public class CreateFragment extends Fragment {
             });
         }
 
-        // Presets
+        // Presets with rich director prompts
         setupPresetButton(view, R.id.preset_house, "Create a realistic modern villa with a swimming pool, wooden deck, interior lighting, furniture, and surrounding palm trees.");
         setupPresetButton(view, R.id.preset_human, "Create a stylized rigged superhero character with suit details, heroic posture, and skeletal animation tracks.");
         setupPresetButton(view, R.id.preset_dog, "Create an animated quadruped dog model with skeletal rig, fur material, and a running cycle animation.");
@@ -164,10 +177,12 @@ public class CreateFragment extends Fragment {
                 String style = spinnerStyle.getSelectedItem() != null ? spinnerStyle.getSelectedItem().toString() : "Photorealistic";
                 String targetEngine = spinnerTarget.getSelectedItem() != null ? spinnerTarget.getSelectedItem().toString() : "OpenGL ES / GLTF";
 
+                // Cache reference images locally so background workers have direct file access
                 List<String> refUrisStrList = new ArrayList<>();
                 for (Uri uri : selectedImageUris) {
                     if (uri != null) {
-                        refUrisStrList.add(uri.toString());
+                        String localFilePath = cacheReferenceImage(requireContext(), uri);
+                        refUrisStrList.add(localFilePath != null ? localFilePath : uri.toString());
                     }
                 }
 
@@ -205,7 +220,7 @@ public class CreateFragment extends Fragment {
     private void updateReferenceUI() {
         if (tvReferenceCount != null) {
             int count = selectedImageUris.size();
-            tvReferenceCount.setText(count + " reference(s) added");
+            tvReferenceCount.setText(count + " reference(s) added (Tap to clear)");
         }
     }
 
@@ -229,7 +244,7 @@ public class CreateFragment extends Fragment {
         adapterQuality.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerQuality.setAdapter(adapterQuality);
 
-        String[] targets = new String[]{"OpenGL ES / GLTF", "Unreal Engine 5", "Unity Universal RP", "Blender Native"};
+        String[] targets = new String[]{"Blender Native", "OpenGL ES / GLTF", "Unreal Engine 5", "Unity Universal RP"};
         ArrayAdapter<String> adapterTarget = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item, targets);
         adapterTarget.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerTarget.setAdapter(adapterTarget);
@@ -238,6 +253,39 @@ public class CreateFragment extends Fragment {
         ArrayAdapter<String> adapterMode = new ArrayAdapter<>(getContext(), android.R.layout.simple_spinner_item, modes);
         adapterMode.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerAutoMode.setAdapter(adapterMode);
+    }
+
+    /**
+     * Copies selected Android content URI into a persistent local file in the app cache
+     * so background threads and Gemini Vision can access it without permission security exceptions.
+     */
+    private String cacheReferenceImage(Context context, Uri contentUri) {
+        try {
+            File cacheFolder = new File(context.getCacheDir(), "references");
+            if (!cacheFolder.exists()) {
+                cacheFolder.mkdirs();
+            }
+
+            File destFile = new File(cacheFolder, "ref_" + System.currentTimeMillis() + "_" + (int)(Math.random() * 1000) + ".jpg");
+
+            try (InputStream in = context.getContentResolver().openInputStream(contentUri);
+                 FileOutputStream out = new FileOutputStream(destFile)) {
+
+                if (in == null) return null;
+
+                byte[] buffer = new byte[8192];
+                int read;
+                while ((read = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, read);
+                }
+                out.flush();
+            }
+
+            return destFile.getAbsolutePath();
+        } catch (Exception e) {
+            VynaraLogger.e("CreateFragment: Failed caching reference image: " + e.getMessage());
+            return contentUri.toString();
+        }
     }
 
     public List<Uri> getSelectedImageUris() {
