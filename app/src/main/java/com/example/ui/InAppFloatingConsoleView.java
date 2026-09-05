@@ -74,19 +74,14 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
                 btnClear.setOnClickListener(v -> VynaraLogger.clear());
             }
 
-            // Bind Copy Button (with dynamic ID fallback)
-            View btnCopy = findViewById(R.id.btn_console_copy);
-            if (btnCopy == null) {
-                int copyResId = getResources().getIdentifier("btn_console_copy", "id", getContext().getPackageName());
-                if (copyResId != 0) {
-                    btnCopy = findViewById(copyResId);
-                }
-            }
+            // Safe dynamic lookup for copy button so missing XML ID never breaks compilation
+            int copyResId = getResources().getIdentifier("btn_console_copy", "id", getContext().getPackageName());
+            View btnCopy = (copyResId != 0) ? findViewById(copyResId) : null;
             if (btnCopy != null) {
                 btnCopy.setOnClickListener(v -> copyLogsToClipboard());
             }
 
-            // Long-press log area to copy as well
+            // Long-press log output area to copy all logs to clipboard
             if (tvLogOutput != null) {
                 tvLogOutput.setOnLongClickListener(v -> {
                     copyLogsToClipboard();
@@ -108,28 +103,20 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
      * Copies all formatted log history with timestamps directly to the Android clipboard.
      */
     public void copyLogsToClipboard() {
-        StringBuilder sb = new StringBuilder();
-        List<VynaraLogger.LogEntry> history = VynaraLogger.getCopyOfLogs();
+        String logs = VynaraLogger.getAllLogsAsString();
 
-        for (VynaraLogger.LogEntry entry : history) {
-            if (entry != null) {
-                String prefix = entry.getFormattedTime() + " " + (entry.getTag() != null ? entry.getTag().name() : "LOG");
-                sb.append(prefix).append(": ").append(entry.getMessage()).append("\n");
-            }
+        if ((logs == null || logs.trim().isEmpty()) && tvLogOutput != null && tvLogOutput.getText() != null) {
+            logs = tvLogOutput.getText().toString();
         }
 
-        if (sb.length() == 0 && tvLogOutput != null && tvLogOutput.getText() != null) {
-            sb.append(tvLogOutput.getText().toString());
-        }
-
-        if (sb.length() == 0) {
+        if (logs == null || logs.trim().isEmpty()) {
             Toast.makeText(getContext(), "Console log is empty", Toast.LENGTH_SHORT).show();
             return;
         }
 
         ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
         if (clipboard != null) {
-            ClipData clip = ClipData.newPlainText("Vynara Diagnostic Logs", sb.toString());
+            ClipData clip = ClipData.newPlainText("Vynara Diagnostic Logs", logs);
             clipboard.setPrimaryClip(clip);
             Toast.makeText(getContext(), "Diagnostic logs copied to clipboard!", Toast.LENGTH_SHORT).show();
         }
@@ -260,7 +247,6 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
 
     @Override
     public void onLogAdded(VynaraLogger.LogEntry entry) {
-        // Safe UI thread posting for logs emitted from background threads
         post(() -> {
             if (isAttachedToWindow()) {
                 appendLog(entry);
