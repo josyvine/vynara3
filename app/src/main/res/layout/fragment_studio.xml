@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/black">
+
+    <!-- 3D Viewport Host -->
+    <android.opengl.GLSurfaceView
+        android:id="@+id/gl_surface_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Top Overlay Toolbar -->
+    <RelativeLayout
+        android:id="@+id/layout_studio_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#9912131C"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_studio_project_title"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="3D Studio • Active Scene"
+                android:textColor="@color/white"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/tv_studio_poly_stats"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Poly Count: 14,280 tris • 12 Objects"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_alignParentEnd="true"
+            android:layout_centerVertical="true"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_undo"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:layout_marginEnd="4dp"
+                android:padding="0dp"
+                android:text="↶"
+                android:textColor="@color/white"
+                app:strokeColor="@color/border_dark" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_redo"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="40dp"
+                android:layout_height="36dp"
+                android:layout_marginEnd="8dp"
+                android:padding="0dp"
+                android:text="↷"
+                android:textColor="@color/white"
+                app:strokeColor="@color/border_dark" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_export_gltf"
+                style="@style/Widget.Material3.Button.TonalButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:paddingHorizontal="10dp"
+                android:text="Export GLTF"
+                android:textColor="@color/primary"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </RelativeLayout>
+
+    <!-- Side Transform Bar -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentEnd="true"
+        android:layout_centerVertical="true"
+        android:layout_marginEnd="12dp"
+        android:background="#AA1A1C28"
+        android:orientation="vertical"
+        android:padding="6dp">
+
+        <ImageButton
+            android:id="@+id/btn_tool_select"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Select"
+            android:src="@android:drawable/ic_menu_compass" />
+
+        <ImageButton
+            android:id="@+id/btn_tool_move"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Move"
+            android:src="@android:drawable/ic_menu_crop" />
+
+        <ImageButton
+            android:id="@+id/btn_tool_rotate"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Rotate"
+            android:src="@android:drawable/ic_menu_rotate" />
+
+        <ImageButton
+            android:id="@+id/btn_tool_scale"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="4dp"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Scale"
+            android:src="@android:drawable/ic_menu_zoom" />
+
+        <ImageButton
+            android:id="@+id/btn_tool_hierarchy"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_marginTop="8dp"
+            android:background="?selectableItemBackgroundBorderless"
+            android:contentDescription="Hierarchy"
+            android:src="@android:drawable/ic_menu_agenda" />
+    </LinearLayout>
+
+    <!-- Bottom Overlay: Animation Timeline Player & Inspector Panel -->
+    <LinearLayout
+        android:id="@+id/layout_studio_bottom_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="#CC12131C"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <!-- Animation Timeline Controls -->
+        <LinearLayout
+            android:id="@+id/layout_timeline_controls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:visibility="visible">
+
+            <ImageButton
+                android:id="@+id/btn_anim_play"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:background="?selectableItemBackgroundBorderless"
+                android:src="@android:drawable/ic_media_play" />
+
+            <SeekBar
+                android:id="@+id/seekbar_timeline"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="100" />
+
+            <TextView
+                android:id="@+id/tv_anim_time"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0.0s / 3.5s"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Inspector & AI Assistant Row -->
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp">
+
+            <TextView
+                android:id="@+id/tv_selected_object_info"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_centerVertical="true"
+                android:text="Selected: None (Tap object in 3D viewport)"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_ai_studio_assistant"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_alignParentEnd="true"
+                android:paddingHorizontal="12dp"
+                android:text="✦ AI Assistant"
+                android:textColor="@color/bg_dark"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                app:backgroundTint="@color/primary"
+                app:cornerRadius="18dp" />
+        </RelativeLayout>
+    </LinearLayout>
+
+</RelativeLayout>
