@@ -43,7 +43,6 @@ public class GeminiApiClient {
     }
 
     public GeminiApiClient() {
-        // Phase 21 Alignment: Configure timeouts for heavy AI 3D scene generation tasks
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)
@@ -97,9 +96,8 @@ public class GeminiApiClient {
                     }
 
                     if (modelList.isEmpty()) {
-                        modelList.add(new AIModel("gemini-3.5-flash", "gemini-3.5-flash", "Standard fast production model", true));
-                        modelList.add(new AIModel("gemini-3.1-flash-lite", "gemini-3.1-flash-lite", "Fast lightweight model", true));
-                        modelList.add(new AIModel("gemini-3.1-pro", "gemini-3.1-pro", "Advanced reasoning model", true));
+                        modelList.add(new AIModel("gemini-1.5-flash", "gemini-1.5-flash", "Standard fast production model", true));
+                        modelList.add(new AIModel("gemini-1.5-pro", "gemini-1.5-pro", "Advanced reasoning model", true));
                     }
 
                     mainHandler.post(() -> callback.onSuccess(modelList));
@@ -127,21 +125,23 @@ public class GeminiApiClient {
     }
 
     public void generateContent(String apiKey, String modelId, String systemInstruction, String userPrompt, final ApiCallback<String> callback) {
-        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, false, callback);
+        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, null, false, callback);
     }
 
-    /**
-     * Phase 2 Alignment: Generates structured JSON output by setting responseMimeType config.
-     */
+    public void generateContent(String apiKey, String modelId, String systemInstruction, String userPrompt, List<String> base64Images, final ApiCallback<String> callback) {
+        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, base64Images, false, callback);
+    }
+
     public void generateStructuredJson(String apiKey, String modelId, String systemInstruction, String userPrompt, final ApiCallback<String> callback) {
-        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, true, callback);
+        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, null, true, callback);
     }
 
-    /**
-     * Generates executable Blender Python (bpy) scripts for cloud workers.
-     */
+    public void generateStructuredJson(String apiKey, String modelId, String systemInstruction, String userPrompt, List<String> base64Images, final ApiCallback<String> callback) {
+        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, base64Images, true, callback);
+    }
+
     public void generateBlenderScript(String apiKey, String modelId, String userPrompt, final ApiCallback<String> callback) {
-        generateContentInternal(apiKey, modelId, BLENDER_SYSTEM_INSTRUCTION, userPrompt, false, new ApiCallback<String>() {
+        generateContentInternal(apiKey, modelId, BLENDER_SYSTEM_INSTRUCTION, userPrompt, null, false, new ApiCallback<String>() {
             @Override
             public void onSuccess(String result) {
                 String cleanedScript = cleanPythonOutput(result);
@@ -155,16 +155,14 @@ public class GeminiApiClient {
         });
     }
 
-    private void generateContentInternal(String apiKey, String modelId, String systemInstruction, String userPrompt, boolean enforceJson, final ApiCallback<String> callback) {
+    private void generateContentInternal(String apiKey, String modelId, String systemInstruction, String userPrompt, List<String> base64Images, boolean enforceJson, final ApiCallback<String> callback) {
         if (apiKey == null || apiKey.trim().isEmpty()) {
             callback.onError("Gemini API key is missing. Please configure it in Settings.");
             return;
         }
 
-        // CRITICAL UPDATE: Instead of silently defaulting to the deprecated "gemini-2.5-flash" model 
-        // when modelId is empty, we must reject the request and inform the user to select an active model.
         if (modelId == null || modelId.trim().isEmpty()) {
-            callback.onError("No active Gemini model selected. Please select a live model from the Settings workspace.");
+            callback.onError("No active Gemini model selected. Please select a model in Settings.");
             return;
         }
 
@@ -188,9 +186,26 @@ public class GeminiApiClient {
             JSONObject userMsg = new JSONObject();
             userMsg.put("role", "user");
             JSONArray parts = new JSONArray();
+
+            // Inject Base64 Image Parts for Gemini Vision
+            if (base64Images != null && !base64Images.isEmpty()) {
+                for (String b64 : base64Images) {
+                    if (b64 != null && !b64.trim().isEmpty()) {
+                        JSONObject inlineData = new JSONObject();
+                        inlineData.put("mime_type", "image/jpeg");
+                        inlineData.put("data", b64.trim());
+                        JSONObject imgPart = new JSONObject();
+                        imgPart.put("inline_data", inlineData);
+                        parts.put(imgPart);
+                    }
+                }
+            }
+
+            // Inject User Prompt Text Part
             JSONObject partText = new JSONObject();
             partText.put("text", userPrompt);
             parts.put(partText);
+
             userMsg.put("parts", parts);
             contents.put(userMsg);
             root.put("contents", contents);
@@ -251,7 +266,7 @@ public class GeminiApiClient {
                             }
                         }
 
-                        mainHandler.post(() -> callback.onError("No text returned in Gemini response."));
+                        mainHandler.post(() -> callback.onError("No content returned in Gemini response."));
                     } catch (Exception e) {
                         mainHandler.post(() -> callback.onError("Error parsing Gemini response: " + e.getMessage()));
                     } finally {
