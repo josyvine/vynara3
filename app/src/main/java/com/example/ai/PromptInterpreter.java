@@ -63,9 +63,12 @@ public class PromptInterpreter {
         String referenceTaskId = null;
         if (plan.hasReferenceImages()) {
             referenceTaskId = "task_" + taskCounter++;
-            TaskNode t0 = new TaskNode(referenceTaskId, "Processing Reference Images", "Analyzing " + plan.getReferenceImageUris().size() + " visual reference image(s)", null);
+            ToolOperation refOp = new ToolOperation("image.process_reference")
+                    .setParam("count", plan.getReferenceImageUris().size())
+                    .setParam("uris", plan.getReferenceImageUris());
+            TaskNode t0 = new TaskNode(referenceTaskId, "Processing Reference Images",
+                    "Ingesting " + plan.getReferenceImageUris().size() + " visual reference image(s) for Director Spec", refOp);
             t0.addDependency(clearTaskId);
-            t0.setStatus(TaskNode.Status.COMPLETED);
             graph.addTask(t0);
         }
 
@@ -79,23 +82,54 @@ public class PromptInterpreter {
 
             // 1. Establish Director Spec & Modular Worker Scripts
             AIDirectorSpec spec = new AIDirectorSpec();
-            String lowerPrompt = userPrompt.toLowerCase();
-            if (lowerPrompt.contains("villa") || lowerPrompt.contains("house") || lowerPrompt.contains("pool")) {
+            String lowerPrompt = (userPrompt != null) ? userPrompt.toLowerCase().trim() : "";
+
+            // Collision-free demo preset detection
+            boolean isVillaDemo = lowerPrompt.contains("realistic modern villa with a swimming pool") 
+                    || lowerPrompt.contains("modern villa & pool")
+                    || lowerPrompt.contains("modern villa & swimming pool")
+                    || (lowerPrompt.contains("villa") && !lowerPrompt.contains("sofa"));
+
+            boolean isSofaDemo = lowerPrompt.contains("modern luxury leather sofa") 
+                    || lowerPrompt.contains("leather sofa") 
+                    || (lowerPrompt.contains("sofa") && !lowerPrompt.contains("villa") && !lowerPrompt.contains("chair") && !lowerPrompt.contains("lounge"));
+
+            boolean isSuperheroDemo = lowerPrompt.contains("stylized rigged superhero character") 
+                    || lowerPrompt.contains("rigged superhero") 
+                    || (lowerPrompt.contains("superhero") && !lowerPrompt.contains("villa"));
+
+            boolean isDogDemo = lowerPrompt.contains("animated quadruped dog model") 
+                    || lowerPrompt.contains("animated dog") 
+                    || (lowerPrompt.contains("dog") && !lowerPrompt.contains("villa"));
+
+            boolean isVillageDemo = lowerPrompt.contains("high-detail tropical village environment") 
+                    || lowerPrompt.contains("tropical village") 
+                    || (lowerPrompt.contains("village") && !lowerPrompt.contains("villa"));
+
+            if (isVillaDemo) {
                 spec.setSceneType("modern_architecture");
                 spec.setMood("twilight_golden_hour");
                 spec.setFocalLengthMm(35.0f);
-            } else if (lowerPrompt.contains("sofa") || lowerPrompt.contains("chair") || lowerPrompt.contains("couch")) {
+            } else if (isSofaDemo) {
                 spec.setSceneType("luxury_furniture");
                 spec.setMood("studio_commercial");
                 spec.setFocalLengthMm(65.0f);
                 spec.setUseVolumetrics(false);
-            } else if (lowerPrompt.contains("superhero") || lowerPrompt.contains("character") || lowerPrompt.contains("humanoid")) {
+            } else if (isSuperheroDemo) {
                 spec.setSceneType("stylized_character");
                 spec.setMood("heroic_dramatic");
                 spec.setFocalLengthMm(50.0f);
+            } else if (isDogDemo) {
+                spec.setSceneType("stylized_animal");
+                spec.setMood("outdoor_daylight");
+                spec.setFocalLengthMm(50.0f);
+            } else if (isVillageDemo) {
+                spec.setSceneType("tropical_village");
+                spec.setMood("sunny_coastal");
+                spec.setFocalLengthMm(35.0f);
             } else {
-                spec.setSceneType("organic_environment");
-                spec.setMood("misty_dawn");
+                spec.setSceneType("custom_dynamic");
+                spec.setMood("cinematic_photoreal");
                 spec.setFocalLengthMm(50.0f);
             }
 
@@ -103,7 +137,7 @@ public class PromptInterpreter {
             BlenderWorkerAgent.WorkerScripts modularScripts = 
                     BlenderWorkerAgent.generateModularScripts(userPrompt, spec, assetId);
 
-            // 2. Build Procedural Scene Script
+            // 2. Build Procedural Scene Script (Full procedural definitions for verified demo presets)
             StringBuilder defaultBpyScript = new StringBuilder();
             defaultBpyScript.append("import bpy\n");
             defaultBpyScript.append("import os\n");
@@ -120,7 +154,7 @@ public class PromptInterpreter {
             defaultBpyScript.append("bpy.ops.object.select_all(action='SELECT')\n");
             defaultBpyScript.append("bpy.ops.object.delete(use_global=False)\n\n");
 
-            if (lowerPrompt.contains("superhero") || lowerPrompt.contains("character") || lowerPrompt.contains("humanoid") || lowerPrompt.contains("biped")) {
+            if (isSuperheroDemo) {
                 defaultBpyScript.append("# --- High-Detail Procedural Rigged Superhero Character ---\n");
                 defaultBpyScript.append("# Materials\n");
                 defaultBpyScript.append("mat_suit = bpy.data.materials.new(name='Suit_Material')\n");
@@ -241,7 +275,7 @@ public class PromptInterpreter {
                 defaultBpyScript.append("    print(f'Parenting note: {pe}')\n");
                 defaultBpyScript.append("    hero_mesh.parent = arm_obj\n\n");
 
-            } else if (lowerPrompt.contains("dog") || lowerPrompt.contains("animal") || lowerPrompt.contains("quadruped") || lowerPrompt.contains("creature")) {
+            } else if (isDogDemo) {
                 defaultBpyScript.append("# --- High-Detail Procedural Rigged Canine Quadruped ---\n");
                 defaultBpyScript.append("mat_fur = bpy.data.materials.new(name='Dog_Fur')\n");
                 defaultBpyScript.append("mat_fur.use_nodes = True\n");
@@ -332,7 +366,7 @@ public class PromptInterpreter {
                 defaultBpyScript.append("    print(f'Dog parenting note: {dpe}')\n");
                 defaultBpyScript.append("    dog_mesh.parent = arm_obj\n\n");
 
-            } else if (lowerPrompt.contains("villa") || lowerPrompt.contains("house") || lowerPrompt.contains("pool")) {
+            } else if (isVillaDemo) {
                 defaultBpyScript.append("# --- Procedural Modern Architectural Villa & Pool ---\n");
                 defaultBpyScript.append("mat_wall = bpy.data.materials.new('Villa_Stucco')\n");
                 defaultBpyScript.append("mat_wall.use_nodes = True\n");
@@ -400,7 +434,7 @@ public class PromptInterpreter {
                 defaultBpyScript.append("    bw_node.inputs['Roughness'].default_value = 0.05\n");
                 defaultBpyScript.append("water.data.materials.append(mat_water)\n\n");
 
-            } else if (lowerPrompt.contains("sofa") || lowerPrompt.contains("chair") || lowerPrompt.contains("couch")) {
+            } else if (isSofaDemo) {
                 defaultBpyScript.append("# --- High-End Luxury Leather Sofa ---\n");
                 defaultBpyScript.append("mat_leather = bpy.data.materials.new('Brown_Leather')\n");
                 defaultBpyScript.append("mat_leather.use_nodes = True\n");
@@ -463,7 +497,7 @@ public class PromptInterpreter {
                 defaultBpyScript.append("    leg.name = 'Sofa_Leg'\n");
                 defaultBpyScript.append("    leg.data.materials.append(mat_metal)\n\n");
 
-            } else if (lowerPrompt.contains("village") || lowerPrompt.contains("tropical") || lowerPrompt.contains("hut")) {
+            } else if (isVillageDemo) {
                 defaultBpyScript.append("# --- Procedural Detailed Tropical Village & Palm Beach ---\n");
                 defaultBpyScript.append("mat_sand = bpy.data.materials.new('Sand_Terrain')\n");
                 defaultBpyScript.append("mat_sand.use_nodes = True\n");
@@ -538,17 +572,8 @@ public class PromptInterpreter {
                 defaultBpyScript.append("        leaf.data.materials.append(mat_leaf)\n\n");
 
             } else {
-                defaultBpyScript.append("# --- High-Fidelity Multi-Part Procedural Structure ---\n");
-                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=2, location=(0, 0, 1))\n");
-                defaultBpyScript.append("main_obj = bpy.context.active_object\n");
-                defaultBpyScript.append("main_obj.name = 'Main_Structure'\n");
-                defaultBpyScript.append("mod = main_obj.modifiers.new('Bevel', 'BEVEL')\n");
-                defaultBpyScript.append("mod.width = 0.08\n");
-                defaultBpyScript.append("mat_gen = bpy.data.materials.new('PBR_Material')\n");
-                defaultBpyScript.append("mat_gen.use_nodes = True\n");
-                defaultBpyScript.append("bg = mat_gen.node_tree.nodes.get('Principled BSDF')\n");
-                defaultBpyScript.append("if bg: bg.inputs['Base Color'].default_value = (0.7, 0.72, 0.75, 1.0)\n");
-                defaultBpyScript.append("main_obj.data.materials.append(mat_gen)\n");
+                defaultBpyScript.append("# --- Dynamic AI Asset Initializer ---\n");
+                defaultBpyScript.append("# Contextual asset initialization (Real-time code authored by Dynamic Script Writer)\n");
             }
 
             defaultBpyScript.append("# Cinematic Sun & Fill Lighting\n");
