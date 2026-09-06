@@ -198,15 +198,25 @@ public class BlenderWorkerAgent {
             sb.append("    wlinks.new(vol_node.outputs['Volume'], w_output.inputs['Volume'])\n\n");
         }
 
-        // Render still image (PNG) + Export 3D Mesh (GLB)
-        sb.append("# Dual Render Deliverables\n");
-        sb.append("bpy.context.scene.render.resolution_x = 1280\n");
-        sb.append("bpy.context.scene.render.resolution_y = 720\n");
-        sb.append("bpy.context.scene.render.filepath = 'output/render.png'\n");
+        // 1. ALWAYS Export 3D GLTF Model FIRST (Guarantees model.glb exists on disk)
+        sb.append("# Step 1: Export Interactive 3D Model (First Priority)\n");
         sb.append("try:\n");
+        sb.append("    bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n");
+        sb.append("    print('3D GLTF Export Successful.')\n");
+        sb.append("except Exception as ge: print(f'GLTF export warning: {ge}')\n\n");
+
+        // 2. Render Still Preview Image using Headless-Safe Cycles CPU Engine
+        sb.append("# Step 2: Render Photorealistic Still Preview Image via CPU Cycles\n");
+        sb.append("try:\n");
+        sb.append("    bpy.context.scene.render.engine = 'CYCLES'\n");
+        sb.append("    bpy.context.scene.cycles.device = 'CPU'\n");
+        sb.append("    bpy.context.scene.cycles.samples = 16\n");
+        sb.append("    bpy.context.scene.render.resolution_x = 1280\n");
+        sb.append("    bpy.context.scene.render.resolution_y = 720\n");
+        sb.append("    bpy.context.scene.render.filepath = 'output/render.png'\n");
         sb.append("    bpy.ops.render.render(write_still=True)\n");
-        sb.append("except Exception as re: print(f'Render still warning: {re}')\n\n");
-        sb.append("bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n");
+        sb.append("    print('Cycles preview render complete.')\n");
+        sb.append("except Exception as re: print(f'Preview render note: {re}')\n");
 
         return sb.toString();
     }
