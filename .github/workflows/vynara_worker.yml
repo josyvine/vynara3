@@ -40,7 +40,7 @@ jobs:
           
           # Write the Python script using direct event payload parsing to prevent shell mangling
           python3 - << 'EOF'
-          import json, os, sys
+          import json, os, sys, re
 
           event_path = os.environ.get('GITHUB_EVENT_PATH')
           bpy_script = ''
@@ -93,11 +93,22 @@ jobs:
                   ef.write(err_msg + '\n')
               sys.exit(1)
 
+          # Auto-Repair: Fix unquoted f-strings (e.g. fPool_LED_{i} -> f"Pool_LED_{i}")
+          bpy_script = re.sub(r'(?<=[=\s,(])f([a-zA-Z0-9_]+\{[^}"\n]+\}[a-zA-Z0-9_]*)', r'f"\1"', bpy_script)
+
+          # Auto-Repair: Fix hallucinated Blender operators (_create instead of _add)
+          bpy_script = bpy_script.replace(".primitive_cube_create(", ".primitive_cube_add(")
+          bpy_script = bpy_script.replace(".primitive_plane_create(", ".primitive_plane_add(")
+          bpy_script = bpy_script.replace(".primitive_cylinder_create(", ".primitive_cylinder_add(")
+          bpy_script = bpy_script.replace(".primitive_cone_create(", ".primitive_cone_add(")
+          bpy_script = bpy_script.replace(".primitive_uv_sphere_create(", ".primitive_uv_sphere_add(")
+
           # Ensure an active camera exists if render is invoked
           if 'bpy.ops.render.render' in bpy_script:
               camera_safeguard = (
                   "\n\n# Workflow Camera Safeguard\n"
                   "try:\n"
+                  "    import math\n"
                   "    if not bpy.context.scene.camera:\n"
                   "        _cam_data = bpy.data.cameras.new('WorkflowCamera')\n"
                   "        _cam_data.lens = 45.0\n"
@@ -137,6 +148,7 @@ jobs:
           # Verify output files and log failures with terminal context
           if [ -f output/model.glb ]; then
             echo "SUCCESS: model.glb generated successfully."
+            exit 0
           else
             echo "ERROR: Blender failed to output model.glb" > output/error.txt
             echo "--- TERMINAL TRACEBACK ---" >> output/error.txt
