@@ -430,19 +430,13 @@ public class GitHubWorkflowBridge {
                                     VynaraLogger.system("GitHubWorkflowBridge: Active Run #" + runId + " Status: " + status + " Conclusion: " + conclusion);
                                     mainHandler.post(() -> callback.onStatusUpdate(status, "Run #" + runId + " [" + status + "]"));
 
+                                    // CRITICAL UPDATE: Download artifact even if conclusion is failure so we can extract error.txt and blender_execution.log!
                                     if ("completed".equalsIgnoreCase(status)) {
-                                        if ("success".equalsIgnoreCase(conclusion)) {
-                                            VynaraLogger.system("GitHubWorkflowBridge: Workflow run #" + runId + " succeeded! Downloading run-specific artifact...");
-                                            mainHandler.post(() -> callback.onStatusUpdate("downloading", "Downloading GLB artifact..."));
+                                        VynaraLogger.system("GitHubWorkflowBridge: Workflow run #" + runId + " finished [" + conclusion + "]. Downloading artifacts...");
+                                        mainHandler.post(() -> callback.onStatusUpdate("downloading", "Downloading worker artifacts..."));
 
-                                            pollAndDownloadArtifact(repository, personalAccessToken, runId, assetId, destinationFile, callback, 1, MAX_ARTIFACT_RETRY_ATTEMPTS);
-                                            return;
-                                        } else {
-                                            String failureMsg = "GitHub Workflow Run #" + runId + " failed with conclusion: " + conclusion;
-                                            VynaraLogger.e(failureMsg);
-                                            mainHandler.post(() -> callback.onError(failureMsg));
-                                            return;
-                                        }
+                                        pollAndDownloadArtifact(repository, personalAccessToken, runId, assetId, destinationFile, callback, 1, MAX_ARTIFACT_RETRY_ATTEMPTS);
+                                        return;
                                     }
                                 } else {
                                     VynaraLogger.system("GitHubWorkflowBridge: Waiting for new workflow run to be queued by GitHub Actions...");
