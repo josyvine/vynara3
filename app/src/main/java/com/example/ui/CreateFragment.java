@@ -120,10 +120,10 @@ public class CreateFragment extends Fragment {
                 if (keyMgr.hasApiKey()) {
                     String displayName = (activeModel == null || activeModel.trim().isEmpty()) ? "gemini-1.5-flash" : activeModel;
                     tvConnectionStatus.setText("AI: " + displayName + " • Connected");
-                    tvConnectionStatus.setTextColor(0xFF00E676); // Green connection color
+                    tvConnectionStatus.setTextColor(0xFF00E676); // Green connection indicator
                 } else {
                     tvConnectionStatus.setText("AI: Disconnected (No API Key)");
-                    tvConnectionStatus.setTextColor(0xFFFF5252); // Red disconnection color
+                    tvConnectionStatus.setTextColor(0xFFFF5252); // Red disconnected indicator
                 }
             }
         }
@@ -158,7 +158,7 @@ public class CreateFragment extends Fragment {
             });
         }
 
-        // Presets with rich director prompts
+        // 5 Curated Demo Presets (Persisted demo templates)
         setupPresetButton(view, R.id.preset_house, "Create a realistic modern villa with a swimming pool, wooden deck, interior lighting, furniture, and surrounding palm trees.");
         setupPresetButton(view, R.id.preset_human, "Create a stylized rigged superhero character with suit details, heroic posture, and skeletal animation tracks.");
         setupPresetButton(view, R.id.preset_dog, "Create an animated quadruped dog model with skeletal rig, fur material, and a running cycle animation.");
@@ -175,9 +175,9 @@ public class CreateFragment extends Fragment {
                 }
 
                 String style = spinnerStyle.getSelectedItem() != null ? spinnerStyle.getSelectedItem().toString() : "Photorealistic";
-                String targetEngine = spinnerTarget.getSelectedItem() != null ? spinnerTarget.getSelectedItem().toString() : "OpenGL ES / GLTF";
+                String targetEngine = spinnerTarget.getSelectedItem() != null ? spinnerTarget.getSelectedItem().toString() : "Blender Native";
 
-                // Cache reference images locally so background workers have direct file access
+                // Cache reference images locally so background workers and Gemini Vision have direct file access
                 List<String> refUrisStrList = new ArrayList<>();
                 for (Uri uri : selectedImageUris) {
                     if (uri != null) {
@@ -260,6 +260,13 @@ public class CreateFragment extends Fragment {
      * so background threads and Gemini Vision can access it without permission security exceptions.
      */
     private String cacheReferenceImage(Context context, Uri contentUri) {
+        if (contentUri == null) return null;
+
+        String scheme = contentUri.getScheme();
+        if (scheme == null || "file".equalsIgnoreCase(scheme)) {
+            return contentUri.getPath();
+        }
+
         try {
             File cacheFolder = new File(context.getCacheDir(), "references");
             if (!cacheFolder.exists()) {
