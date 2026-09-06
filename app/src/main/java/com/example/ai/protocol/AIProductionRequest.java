@@ -8,6 +8,8 @@ public class AIProductionRequest {
     private String style;
     private String targetEngine;
     private String qualityLevel;
+    private boolean isDemoPreset = false;
+    private String demoPresetId = null;
     private final List<String> referenceImageUris = new ArrayList<>();
 
     public AIProductionRequest(String userPrompt) {
@@ -36,6 +38,8 @@ public class AIProductionRequest {
     public String getTargetEngine() { return targetEngine; }
     public String getQualityLevel() { return qualityLevel; }
     public List<String> getReferenceImageUris() { return referenceImageUris; }
+    public boolean isDemoPreset() { return isDemoPreset; }
+    public String getDemoPresetId() { return demoPresetId; }
 
     public void setUserPrompt(String userPrompt) {
         this.userPrompt = userPrompt;
@@ -53,11 +57,34 @@ public class AIProductionRequest {
         this.qualityLevel = qualityLevel;
     }
 
+    public void setDemoPreset(boolean isDemoPreset) {
+        this.isDemoPreset = isDemoPreset;
+    }
+
+    public void setDemoPresetId(String demoPresetId) {
+        this.demoPresetId = demoPresetId;
+    }
+
     public AIProductionRequest addReferenceImageUri(String uriStr) {
-        if (uriStr != null && !uriStr.trim().isEmpty() && !referenceImageUris.contains(uriStr)) {
+        if (uriStr != null && !uriStr.trim().isEmpty() && !referenceImageUris.contains(uriStr.trim())) {
             referenceImageUris.add(uriStr.trim());
         }
         return this;
+    }
+
+    public void setReferenceImageUris(List<String> uris) {
+        referenceImageUris.clear();
+        if (uris != null) {
+            for (String u : uris) {
+                if (u != null && !u.trim().isEmpty() && !referenceImageUris.contains(u.trim())) {
+                    referenceImageUris.add(u.trim());
+                }
+            }
+        }
+    }
+
+    public void clearReferenceImages() {
+        referenceImageUris.clear();
     }
 
     public boolean hasReferenceImages() {
