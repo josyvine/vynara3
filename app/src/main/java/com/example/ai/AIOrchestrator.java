@@ -184,8 +184,9 @@ public class AIOrchestrator {
                 "5. NEVER generate a generic single cube, bevelled box, or placeholder. Build authentic multi-component structures.\n" +
                 "6. NEVER output unquoted f-strings like `fName_{i}`. All f-strings MUST have double quotes: `f\"Name_{i}\"` or use string concatenation `\"Name_\" + str(i)`.\n" +
                 "7. Use correct standard Blender operators: `bpy.ops.mesh.primitive_cube_add`, `bpy.ops.mesh.primitive_plane_add`, `bpy.ops.mesh.primitive_cylinder_add`, `bpy.ops.mesh.primitive_cone_add`, `bpy.ops.mesh.primitive_uv_sphere_add`. Never invent `_create` operators.\n" +
-                "8. Do not include GUI/context-dependent operators that fail in headless mode (avoid bpy.ops.view3d, screen area operators).\n" +
-                "9. Organize objects cleanly with descriptive names and parent them logically.";
+                "8. Lighting & Camera operators: ALWAYS use `bpy.ops.object.light_add(type='SUN'|'POINT'|'SPOT'|'AREA', location=...)` and `bpy.ops.object.camera_add(location=...)`. NEVER use `bpy.ops.light.add`.\n" +
+                "9. Do not include GUI/context-dependent operators that fail in headless mode (avoid bpy.ops.view3d, screen area operators).\n" +
+                "10. Organize objects cleanly with descriptive names and parent them logically.";
 
         StringBuilder promptBuilder = new StringBuilder();
         promptBuilder.append("USER PROMPT: ").append(userPrompt).append("\n");
@@ -340,7 +341,9 @@ public class AIOrchestrator {
         // 1. Auto-sanitize unquoted f-strings: e.g., fPool_LED_{i} -> f"Pool_LED_{i}"
         code = code.replaceAll("(?<=[=\\s,(])f([a-zA-Z0-9_]+\\{[^}\"\\n]+\\}[a-zA-Z0-9_]*)", "f\"$1\"");
 
-        // 2. Auto-sanitize hallucinated Blender operator names (_create -> _add)
+        // 2. Auto-sanitize hallucinated Blender operator names
+        code = code.replace("bpy.ops.light.add(", "bpy.ops.object.light_add(");
+        code = code.replace("bpy.ops.camera.add(", "bpy.ops.object.camera_add(");
         code = code.replace(".primitive_cube_create(", ".primitive_cube_add(");
         code = code.replace(".primitive_plane_create(", ".primitive_plane_add(");
         code = code.replace(".primitive_cylinder_create(", ".primitive_cylinder_add(");
