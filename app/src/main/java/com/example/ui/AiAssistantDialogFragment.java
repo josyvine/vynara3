@@ -22,8 +22,11 @@ import com.example.engine.Material;
 import com.example.engine.Scene;
 import com.example.engine.SceneObject;
 import com.example.runtime.ProjectRuntime;
+import com.example.tools.ToolOperation;
 
 import org.json.JSONObject;
+
+import java.util.List;
 
 public class AiAssistantDialogFragment extends DialogFragment {
 
@@ -70,8 +73,8 @@ public class AiAssistantDialogFragment extends DialogFragment {
     }
 
     /**
-     * Phase 2 & 16 Alignment: Serializes active viewport 3D state, requests natural language
-     * edit parameters from Gemini AI, and applies transform or material changes.
+     * Serializes active viewport 3D state, requests natural language
+     * edit parameters from Gemini AI, and applies transform, material, or creation changes.
      */
     private void executeStudioAiEdit(String editPrompt) {
         if (runtime == null || getContext() == null) return;
@@ -82,7 +85,7 @@ public class AiAssistantDialogFragment extends DialogFragment {
         Scene activeScene = runtime.getEngine().getSceneManager().getActiveScene();
         String contextJson = AIContext.buildSceneContextJson(activeScene);
 
-        // 2. Query Gemini Assistant for edit parameters (PBR, transform, lighting)
+        // 2. Query Gemini Assistant for edit parameters (PBR, transform, lighting, or creation)
         runtime.getAIOrchestrator().processNaturalLanguageStudioEdit(editPrompt, contextJson, new GeminiApiClient.ApiCallback<String>() {
             @Override
             public void onSuccess(String rawJsonResult) {
@@ -111,28 +114,66 @@ public class AiAssistantDialogFragment extends DialogFragment {
 
         try {
             JSONObject root = new JSONObject(rawJson);
-            
-            // Extract targeting parameters
-            String targetId = root.optString("targetObjectId", null);
+            String action = root.optString("action", "EDIT").toUpperCase();
             SceneObject targetNode = null;
-            if (targetId != null) {
-                targetNode = runtime.getEngine().getSceneManager().findObjectById(targetId);
-            }
-            if (targetNode == null) {
+
+            // Handle CREATE Action: Spawns clean geometry instead of altering the ground floor
+            if ("CREATE".equals(action)) {
+                String creationType = root.optString("creationType", "cube").toLowerCase();
+                String name = root.optString("name", "New_" + creationType);
+
+                String primType = "cube";
+                if (creationType.contains("sphere") || creationType.contains("ball")) {
+                    primType = "sphere";
+                } else if (creationType.contains("plane") || creationType.contains("water") || creationType.contains("pool") || creationType.contains("ground")) {
+                    primType = "plane";
+                } else if (creationType.contains("cylinder")) {
+                    primType = "cylinder";
+                }
+
+                runtime.getTransactionManager().beginTransaction("AI Create: " + name);
+
+                ToolOperation createOp = new ToolOperation("geometry.create_primitive")
+                        .setParam("type", primType)
+                        .setParam("name", name);
+
+                if (runtime.getToolExecutor() != null) {
+                    runtime.getToolExecutor().execute(createOp, runtime);
+                }
+
+                // Pick up the newly created object
                 targetNode = runtime.getEngine().getSceneManager().getSelectedObject();
-            }
-            if (targetNode == null && !runtime.getEngine().getSceneManager().getAllObjects().isEmpty()) {
-                targetNode = runtime.getEngine().getSceneManager().getAllObjects().get(0);
+                if (targetNode == null && !runtime.getEngine().getSceneManager().getAllObjects().isEmpty()) {
+                    List<SceneObject> all = runtime.getEngine().getSceneManager().getAllObjects();
+                    targetNode = all.get(all.size() - 1);
+                }
+
+            } else {
+                // EDIT Action: Targets selected or referenced object
+                String targetId = root.optString("targetObjectId", null);
+                if (targetId != null && !targetId.isEmpty()) {
+                    targetNode = runtime.getEngine().getSceneManager().findObjectById(targetId);
+                }
+                if (targetNode == null) {
+                    targetNode = runtime.getEngine().getSceneManager().getSelectedObject();
+                }
+                if (targetNode == null && !runtime.getEngine().getSceneManager().getAllObjects().isEmpty()) {
+                    targetNode = runtime.getEngine().getSceneManager().getAllObjects().get(0);
+                }
+
+                if (targetNode == null) return false;
+                runtime.getTransactionManager().beginTransaction("Apply AI Edit: " + targetNode.getName());
             }
 
             if (targetNode == null) return false;
 
-            // Begin scene transaction for undo/redo capability
-            runtime.getTransactionManager().beginTransaction("Apply AI Edit: " + targetNode.getName());
-
             // 1. Process Translate / Transform updates
             JSONObject transform = root.optJSONObject("transform");
-            if (transform != null) {
+            if (transform == null) {
+                transform = root.optJSONObject("position");
+            }
+
+            if (transform != null && targetNode.getTransform() != null) {
                 float px = (float) transform.optDouble("px", targetNode.getTransform().getPx());
                 float py = (float) transform.optDouble("py", targetNode.getTransform().getPy());
                 float pz = (float) transform.optDouble("pz", targetNode.getTransform().getPz());
@@ -157,7 +198,7 @@ public class AiAssistantDialogFragment extends DialogFragment {
                 float roughness = (float) material.optDouble("roughness", targetNode.getMaterial() != null ? targetNode.getMaterial().getRoughness() : 0.5f);
                 float opacity = (float) material.optDouble("opacity", targetNode.getMaterial() != null ? targetNode.getMaterial().getOpacity() : 1.0f);
 
-                Material editMat = new Material("mat_" + System.currentTimeMillis(), "AI Edit Material", colorHex != null ? colorHex : "#FFFFFF");
+                Material editMat = new Material("mat_" + System.currentTimeMillis(), targetNode.getName() + " Material", colorHex != null ? colorHex : "#FFFFFF");
                 editMat.setMetallic(metallic);
                 editMat.setRoughness(roughness);
                 editMat.setOpacity(opacity);
