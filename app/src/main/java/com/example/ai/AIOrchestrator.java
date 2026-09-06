@@ -106,7 +106,6 @@ public class AIOrchestrator {
 
                             if (isDemo) {
                                 VynaraLogger.system("AIOrchestrator: Demo Preset recognized. Preserving curated demo production script.");
-                                // Plan already has the battle-tested script from PromptInterpreter; attach parameters without overwriting with generic placeholders
                                 for (TaskNode node : plan.getTaskGraph().getAllNodes()) {
                                     if (node.getOperation() != null && 
                                             "blender.cloud_generate".equalsIgnoreCase(node.getOperation().getToolId())) {
@@ -177,14 +176,16 @@ public class AIOrchestrator {
 
         String systemInstruction = "You are an expert 3D modeling and rigging engineer using Blender's Python API (`bpy`).\n" +
                 "Generate production-grade, error-free Python code for Blender 4.x/5.x to build the 3D model or scene requested.\n" +
-                "RULES:\n" +
+                "CRITICAL SYNTAX & OPERATOR RULES:\n" +
                 "1. Output ONLY executable Python code inside a single ```python code block. No explanations, no markdown outside the block.\n" +
                 "2. Construct real, detailed, multi-part 3D geometry matching the user's prompt (e.g., car body, wheels, chassis, windows, walls, roofs, terrain, character anatomy).\n" +
                 "3. Use modifiers where appropriate (Bevel, Subdivision Surface, Mirror, Solidify, Boolean).\n" +
                 "4. Create Principled BSDF materials with realistic Base Color, Metallic, Roughness, and Transmission according to the Director Spec.\n" +
                 "5. NEVER generate a generic single cube, bevelled box, or placeholder. Build authentic multi-component structures.\n" +
-                "6. Do not include GUI/context-dependent operators that fail in headless mode (avoid bpy.ops.view3d, screen area operators).\n" +
-                "7. Organize objects cleanly with descriptive names and parent them logically.";
+                "6. NEVER output unquoted f-strings like `fName_{i}`. All f-strings MUST have double quotes: `f\"Name_{i}\"` or use string concatenation `\"Name_\" + str(i)`.\n" +
+                "7. Use correct standard Blender operators: `bpy.ops.mesh.primitive_cube_add`, `bpy.ops.mesh.primitive_plane_add`, `bpy.ops.mesh.primitive_cylinder_add`, `bpy.ops.mesh.primitive_cone_add`, `bpy.ops.mesh.primitive_uv_sphere_add`. Never invent `_create` operators.\n" +
+                "8. Do not include GUI/context-dependent operators that fail in headless mode (avoid bpy.ops.view3d, screen area operators).\n" +
+                "9. Organize objects cleanly with descriptive names and parent them logically.";
 
         StringBuilder promptBuilder = new StringBuilder();
         promptBuilder.append("USER PROMPT: ").append(userPrompt).append("\n");
@@ -264,15 +265,16 @@ public class AIOrchestrator {
                 ? spec.getCameraPosition() : new float[]{0.0f, -8.0f, 3.5f};
 
         sb.append("try:\n");
-        sb.append("    cam_data = bpy.data.cameras.new('CinematicCamera')\n");
-        sb.append("    cam_data.lens = ").append(focalLength).append("\n");
-        sb.append("    cam_data.dof.use_dof = True\n");
-        sb.append("    cam_data.dof.aperture_fstop = ").append(fstop).append("\n");
-        sb.append("    cam_obj = bpy.data.objects.new('Camera', cam_data)\n");
-        sb.append("    bpy.context.collection.objects.link(cam_obj)\n");
-        sb.append("    bpy.context.scene.camera = cam_obj\n");
-        sb.append("    cam_obj.location = (").append(camPos[0]).append(", ").append(camPos[1]).append(", ").append(camPos[2]).append(")\n");
-        sb.append("    cam_obj.rotation_euler = (math.radians(72), 0, 0)\n");
+        sb.append("    if not bpy.context.scene.camera:\n");
+        sb.append("        cam_data = bpy.data.cameras.new('CinematicCamera')\n");
+        sb.append("        cam_data.lens = ").append(focalLength).append("\n");
+        sb.append("        cam_data.dof.use_dof = True\n");
+        sb.append("        cam_data.dof.aperture_fstop = ").append(fstop).append("\n");
+        sb.append("        cam_obj = bpy.data.objects.new('Camera', cam_data)\n");
+        sb.append("        bpy.context.collection.objects.link(cam_obj)\n");
+        sb.append("        bpy.context.scene.camera = cam_obj\n");
+        sb.append("        cam_obj.location = (").append(camPos[0]).append(", ").append(camPos[1]).append(", ").append(camPos[2]).append(")\n");
+        sb.append("        cam_obj.rotation_euler = (math.radians(72), 0, 0)\n");
         sb.append("except Exception as ce: print(f'Camera setup note: {ce}')\n\n");
 
         sb.append("try:\n");
@@ -308,14 +310,15 @@ public class AIOrchestrator {
 
         sb.append("# --- STEP 2: HEADLESS-SAFE CPU CYCLES PREVIEW RENDER ---\n");
         sb.append("try:\n");
-        sb.append("    bpy.context.scene.render.engine = 'CYCLES'\n");
-        sb.append("    bpy.context.scene.cycles.device = 'CPU'\n");
-        sb.append("    bpy.context.scene.cycles.samples = 16\n");
-        sb.append("    bpy.context.scene.render.resolution_x = 1280\n");
-        sb.append("    bpy.context.scene.render.resolution_y = 720\n");
-        sb.append("    bpy.context.scene.render.filepath = 'output/render.png'\n");
-        sb.append("    bpy.ops.render.render(write_still=True)\n");
-        sb.append("    print('Cycles preview render complete: output/render.png')\n");
+        sb.append("    if bpy.context.scene.camera:\n");
+        sb.append("        bpy.context.scene.render.engine = 'CYCLES'\n");
+        sb.append("        bpy.context.scene.cycles.device = 'CPU'\n");
+        sb.append("        bpy.context.scene.cycles.samples = 16\n");
+        sb.append("        bpy.context.scene.render.resolution_x = 1280\n");
+        sb.append("        bpy.context.scene.render.resolution_y = 720\n");
+        sb.append("        bpy.context.scene.render.filepath = 'output/render.png'\n");
+        sb.append("        bpy.ops.render.render(write_still=True)\n");
+        sb.append("        print('Cycles preview render complete: output/render.png')\n");
         sb.append("except Exception as re: print(f'Preview render note: {re}')\n");
 
         return sb.toString();
@@ -332,6 +335,18 @@ public class AIOrchestrator {
         if (code.endsWith("```")) {
             code = code.substring(0, code.length() - 3);
         }
+        code = code.trim();
+
+        // 1. Auto-sanitize unquoted f-strings: e.g., fPool_LED_{i} -> f"Pool_LED_{i}"
+        code = code.replaceAll("(?<=[=\\s,(])f([a-zA-Z0-9_]+\\{[^}\"\\n]+\\}[a-zA-Z0-9_]*)", "f\"$1\"");
+
+        // 2. Auto-sanitize hallucinated Blender operator names (_create -> _add)
+        code = code.replace(".primitive_cube_create(", ".primitive_cube_add(");
+        code = code.replace(".primitive_plane_create(", ".primitive_plane_add(");
+        code = code.replace(".primitive_cylinder_create(", ".primitive_cylinder_add(");
+        code = code.replace(".primitive_cone_create(", ".primitive_cone_add(");
+        code = code.replace(".primitive_uv_sphere_create(", ".primitive_uv_sphere_add(");
+
         return code.trim();
     }
 
