@@ -367,6 +367,9 @@ public class ToolExecutor {
                                 }
                                 for (Character ch : result.getCharacters()) {
                                     characterManager.registerCharacter(ch);
+                                    if (ch.getSceneObject() != null) {
+                                        engine.getSceneManager().getActiveScene().addObject(ch.getSceneObject());
+                                    }
                                 }
                                 engine.getSceneManager().updateWorldTransforms();
                                 autoFrameCameraOnScene();
@@ -413,6 +416,10 @@ public class ToolExecutor {
                                         }
                                         for (Character ch : result.getCharacters()) {
                                             characterManager.registerCharacter(ch);
+                                            // Attach rigged character mesh to active scene viewport so it renders immediately
+                                            if (ch.getSceneObject() != null) {
+                                                engine.getSceneManager().getActiveScene().addObject(ch.getSceneObject());
+                                            }
                                         }
                                         engine.getSceneManager().updateWorldTransforms();
                                         autoFrameCameraOnScene();
@@ -502,6 +509,9 @@ public class ToolExecutor {
                                 }
                                 for (Character riggedChar : result.getCharacters()) {
                                     characterManager.registerCharacter(riggedChar);
+                                    if (riggedChar.getSceneObject() != null) {
+                                        engine.getSceneManager().getActiveScene().addObject(riggedChar.getSceneObject());
+                                    }
                                 }
                                 engine.getSceneManager().updateWorldTransforms();
                                 success.set(true);
@@ -559,6 +569,9 @@ public class ToolExecutor {
                             }
                             for (Character ch : result.getCharacters()) {
                                 characterManager.registerCharacter(ch);
+                                if (ch.getSceneObject() != null) {
+                                    engine.getSceneManager().getActiveScene().addObject(ch.getSceneObject());
+                                }
                             }
                             engine.getSceneManager().updateWorldTransforms();
                             autoFrameCameraOnScene();
