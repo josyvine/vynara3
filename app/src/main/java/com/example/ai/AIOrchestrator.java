@@ -45,10 +45,31 @@ public class AIOrchestrator {
     }
 
     /**
-     * Executes the Director-Worker Production Pipeline:
-     * Phase 1: DirectorAgent establishes camera DOF (f/1.8), sun angle, volumetric mist, and seeds.
-     * Phase 2: BlenderWorkerAgent generates modular sub-scripts (hero, environment, lighting).
-     * Phase 3: Compiles executable DAG tasks.
+     * Checks if the user prompt is an exact match for one of the 5 curated Demo Presets.
+     * Prevents keyword collision while guaranteeing the 5 showcase demos remain fully functional.
+     */
+    public static boolean isDemoPreset(String prompt) {
+        if (prompt == null) return false;
+        String p = prompt.trim().toLowerCase();
+        return p.contains("realistic modern villa with a swimming pool")
+                || p.contains("stylized rigged superhero character")
+                || p.contains("animated quadruped dog model")
+                || p.contains("modern luxury leather sofa")
+                || p.contains("high-detail tropical village environment")
+                || p.equals("modern villa & pool")
+                || p.equals("modern villa & swimming pool")
+                || p.equals("rigged superhero")
+                || p.equals("animated dog")
+                || p.equals("leather sofa")
+                || p.equals("tropical village");
+    }
+
+    /**
+     * Executes the Autonomous Production Pipeline:
+     * Phase 1: DirectorAgent inspects prompt & visual references to formulate the spatial/visual contract.
+     * Phase 2: If Demo Preset, uses the curated demo script. If Custom Prompt, dispatches live to Gemini
+     *          to write 100% custom Blender Python (bpy) code from scratch.
+     * Phase 3: Wraps the Python code with CPU-safe Cycles settings, camera rigs, and GLB export.
      */
     public void planProductionWithGemini(final AIProductionRequest request, final GeminiApiClient.ApiCallback<ProductionPlan> callback) {
         if (request == null || callback == null) return;
@@ -76,31 +97,60 @@ public class AIOrchestrator {
                         VynaraLogger.system("AIOrchestrator: Phase 1 Complete. Formulating Phase 2 execution graph...");
 
                         if (isBlenderNative) {
-                            // Phase 2: Generate Modular Worker Scripts for Blender Native
-                            String assetId = "asset_" + System.currentTimeMillis();
-                            BlenderWorkerAgent.WorkerScripts workerScripts = 
-                                    BlenderWorkerAgent.generateModularScripts(request.getUserPrompt(), directorSpec, assetId);
-
-                            ProductionPlan plan = promptInterpreter.createProductionPlan(
+                            final String assetId = "asset_" + System.currentTimeMillis();
+                            final ProductionPlan plan = promptInterpreter.createProductionPlan(
                                     request.getUserPrompt(), request.getStyle(), request.getTargetEngine(), request.getReferenceImageUris());
 
-                            // Attach modular scripts and seeds directly to the blender.cloud_generate task node
-                            for (TaskNode node : plan.getTaskGraph().getAllNodes()) {
-                                if (node.getOperation() != null && 
-                                        "blender.cloud_generate".equalsIgnoreCase(node.getOperation().getToolId())) {
-                                    node.getOperation().setParam("assetId", assetId);
-                                    node.getOperation().setParam("bpyScript", workerScripts.compositeMasterScript);
-                                    node.getOperation().setParam("w1HeroScript", workerScripts.heroScript);
-                                    node.getOperation().setParam("w2EnvScript", workerScripts.environmentScript);
-                                    node.getOperation().setParam("w3LightScript", workerScripts.lightingAndRenderScript);
-                                    node.getOperation().setParam("seedHero", directorSpec.getSeedHero());
-                                    node.getOperation().setParam("seedVegetation", directorSpec.getSeedVegetation());
-                                    node.getOperation().setParam("seedLighting", directorSpec.getSeedLighting());
-                                    node.getOperation().setParam("directorSpec", directorSpec.toJson().toString());
-                                }
-                            }
+                            // Check if this is an explicit demo preset without custom reference images
+                            boolean isDemo = isDemoPreset(request.getUserPrompt()) && !request.hasReferenceImages();
 
-                            callback.onSuccess(plan);
+                            if (isDemo) {
+                                VynaraLogger.system("AIOrchestrator: Demo Preset recognized. Preserving curated demo production script.");
+                                // Plan already has the battle-tested script from PromptInterpreter; attach parameters without overwriting with generic placeholders
+                                for (TaskNode node : plan.getTaskGraph().getAllNodes()) {
+                                    if (node.getOperation() != null && 
+                                            "blender.cloud_generate".equalsIgnoreCase(node.getOperation().getToolId())) {
+                                        node.getOperation().setParam("assetId", assetId);
+                                        node.getOperation().setParam("seedHero", directorSpec.getSeedHero());
+                                        node.getOperation().setParam("seedVegetation", directorSpec.getSeedVegetation());
+                                        node.getOperation().setParam("seedLighting", directorSpec.getSeedLighting());
+                                        node.getOperation().setParam("directorSpec", directorSpec.toJson().toString());
+                                    }
+                                }
+                                callback.onSuccess(plan);
+                            } else {
+                                // Phase 2: Dynamic AI Script Writer (Live Gemini Generation for custom creative prompts & reference images)
+                                VynaraLogger.system("AIOrchestrator: Custom creative prompt detected. Engaging Phase 2 Dynamic AI Script Writer...");
+                                dispatchDynamicScriptWriter(request.getUserPrompt(), request.getStyle(), directorSpec, new GeminiApiClient.ApiCallback<String>() {
+                                    @Override
+                                    public void onSuccess(String dynamicBpyCode) {
+                                        // Phase 3: Local Safety Wrapper with CPU-Safe Settings and Standard GLB Export
+                                        String finalMasterScript = wrapDynamicScriptWithSafety(dynamicBpyCode, directorSpec);
+
+                                        for (TaskNode node : plan.getTaskGraph().getAllNodes()) {
+                                            if (node.getOperation() != null && 
+                                                    "blender.cloud_generate".equalsIgnoreCase(node.getOperation().getToolId())) {
+                                                node.getOperation().setParam("assetId", assetId);
+                                                node.getOperation().setParam("bpyScript", finalMasterScript);
+                                                node.getOperation().setParam("w1HeroScript", dynamicBpyCode);
+                                                node.getOperation().setParam("seedHero", directorSpec.getSeedHero());
+                                                node.getOperation().setParam("seedVegetation", directorSpec.getSeedVegetation());
+                                                node.getOperation().setParam("seedLighting", directorSpec.getSeedLighting());
+                                                node.getOperation().setParam("directorSpec", directorSpec.toJson().toString());
+                                            }
+                                        }
+
+                                        VynaraLogger.system("AIOrchestrator: Phase 3 Wrapper complete. Production plan ready for cloud dispatch.");
+                                        callback.onSuccess(plan);
+                                    }
+
+                                    @Override
+                                    public void onError(String errorMessage) {
+                                        VynaraLogger.e("AIOrchestrator: Dynamic Script Writer failed: " + errorMessage);
+                                        callback.onError(errorMessage);
+                                    }
+                                });
+                            }
                         } else {
                             // Local OpenGL ES / GLTF execution path with Gemini planning
                             executeStructuredGeminiPlanning(request, directorSpec, callback);
@@ -114,6 +164,175 @@ public class AIOrchestrator {
                     }
                 }
         );
+    }
+
+    /**
+     * Phase 2: Dispatches a live request to Gemini to author 100% custom Blender Python (bpy) code from scratch.
+     */
+    private void dispatchDynamicScriptWriter(final String userPrompt, 
+                                             final String style, 
+                                             final AIDirectorSpec directorSpec, 
+                                             final GeminiApiClient.ApiCallback<String> callback) {
+        VynaraLogger.system("AIOrchestrator: Synthesizing live Blender Python code via Gemini Script Writer...");
+
+        String systemInstruction = "You are an expert 3D modeling and rigging engineer using Blender's Python API (`bpy`).\n" +
+                "Generate production-grade, error-free Python code for Blender 4.x/5.x to build the 3D model or scene requested.\n" +
+                "RULES:\n" +
+                "1. Output ONLY executable Python code inside a single ```python code block. No explanations, no markdown outside the block.\n" +
+                "2. Construct real, detailed, multi-part 3D geometry matching the user's prompt (e.g., car body, wheels, chassis, windows, walls, roofs, terrain, character anatomy).\n" +
+                "3. Use modifiers where appropriate (Bevel, Subdivision Surface, Mirror, Solidify, Boolean).\n" +
+                "4. Create Principled BSDF materials with realistic Base Color, Metallic, Roughness, and Transmission according to the Director Spec.\n" +
+                "5. NEVER generate a generic single cube, bevelled box, or placeholder. Build authentic multi-component structures.\n" +
+                "6. Do not include GUI/context-dependent operators that fail in headless mode (avoid bpy.ops.view3d, screen area operators).\n" +
+                "7. Organize objects cleanly with descriptive names and parent them logically.";
+
+        StringBuilder promptBuilder = new StringBuilder();
+        promptBuilder.append("USER PROMPT: ").append(userPrompt).append("\n");
+        promptBuilder.append("STYLE: ").append(style).append("\n");
+        promptBuilder.append("DIRECTOR SPECIFICATION:\n");
+        promptBuilder.append("- Scene Type: ").append(directorSpec.getSceneType()).append("\n");
+        promptBuilder.append("- Mood: ").append(directorSpec.getMood()).append("\n");
+        promptBuilder.append("- Primary Color Hex: ").append(directorSpec.getPrimaryColorHex()).append("\n");
+        promptBuilder.append("- Secondary Color Hex: ").append(directorSpec.getSecondaryColorHex()).append("\n");
+        promptBuilder.append("- Camera Focal Length: ").append(directorSpec.getFocalLengthMm()).append("mm\n");
+        promptBuilder.append("- Sun Intensity: ").append(directorSpec.getSunIntensity()).append("\n");
+        promptBuilder.append("- Volumetric Fog: ").append(directorSpec.isUseVolumetrics()).append("\n");
+        promptBuilder.append("- Hero Seed: ").append(directorSpec.getSeedHero()).append("\n");
+        promptBuilder.append("- Environment Seed: ").append(directorSpec.getSeedVegetation()).append("\n\n");
+        promptBuilder.append("Now generate the complete Blender Python script to sculpt and build this asset.");
+
+        apiClient.generateContent(
+                apiKeyManager.getApiKey(),
+                apiKeyManager.getSelectedModel(),
+                systemInstruction,
+                promptBuilder.toString(),
+                new GeminiApiClient.ApiCallback<String>() {
+                    @Override
+                    public void onSuccess(String result) {
+                        String cleaned = cleanPythonCode(result);
+                        if (cleaned.isEmpty()) {
+                            callback.onError("Gemini Script Writer returned empty code.");
+                        } else {
+                            VynaraLogger.system("AIOrchestrator: Phase 2 Complete. Dynamic Python script synthesized (" + cleaned.length() + " chars).");
+                            callback.onSuccess(cleaned);
+                        }
+                    }
+
+                    @Override
+                    public void onError(String errorMessage) {
+                        VynaraLogger.e("AIOrchestrator: Phase 2 Script Writer failed: " + errorMessage);
+                        callback.onError("AI Script Writer Error: " + errorMessage);
+                    }
+                }
+        );
+    }
+
+    /**
+     * Phase 3: Wraps Gemini's dynamic modeling script with headless scene initialization,
+     * cinematic camera/lighting, CPU-safe Cycles settings, and standardized GLB export.
+     */
+    private String wrapDynamicScriptWithSafety(String dynamicCode, AIDirectorSpec spec) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# ==========================================\n");
+        sb.append("# Vynara Autonomous 3D Studio - Dynamic AI Build\n");
+        sb.append("# Scene Type: ").append(spec != null ? spec.getSceneType() : "Custom").append("\n");
+        sb.append("# ==========================================\n\n");
+        sb.append("import bpy\n");
+        sb.append("import os\n");
+        sb.append("import math\n");
+        sb.append("import random\n");
+        sb.append("import sys\n");
+        sb.append("import addon_utils\n\n");
+        sb.append("try:\n");
+        sb.append("    addon_utils.enable('archimesh')\n");
+        sb.append("    addon_utils.enable('rigify')\n");
+        sb.append("except Exception as e:\n");
+        sb.append("    print(f'Addon activation note: {e}')\n\n");
+        sb.append("os.makedirs('output', exist_ok=True)\n\n");
+        sb.append("# Reset scene completely\n");
+        sb.append("bpy.ops.object.select_all(action='SELECT')\n");
+        sb.append("bpy.ops.object.delete(use_global=False)\n\n");
+
+        sb.append("# --- DYNAMIC AI MESH GENERATION ---\n");
+        sb.append(dynamicCode).append("\n\n");
+
+        sb.append("# --- CINEMATIC LIGHTING & CAMERA RIG ---\n");
+        float focalLength = (spec != null && spec.getFocalLengthMm() > 0) ? spec.getFocalLengthMm() : 50.0f;
+        float fstop = (spec != null && spec.getApertureFStop() > 0) ? spec.getApertureFStop() : 1.8f;
+        float sunIntensity = (spec != null && spec.getSunIntensity() > 0) ? spec.getSunIntensity() : 4.5f;
+        float[] camPos = (spec != null && spec.getCameraPosition() != null && spec.getCameraPosition().length >= 3)
+                ? spec.getCameraPosition() : new float[]{0.0f, -8.0f, 3.5f};
+
+        sb.append("try:\n");
+        sb.append("    cam_data = bpy.data.cameras.new('CinematicCamera')\n");
+        sb.append("    cam_data.lens = ").append(focalLength).append("\n");
+        sb.append("    cam_data.dof.use_dof = True\n");
+        sb.append("    cam_data.dof.aperture_fstop = ").append(fstop).append("\n");
+        sb.append("    cam_obj = bpy.data.objects.new('Camera', cam_data)\n");
+        sb.append("    bpy.context.collection.objects.link(cam_obj)\n");
+        sb.append("    bpy.context.scene.camera = cam_obj\n");
+        sb.append("    cam_obj.location = (").append(camPos[0]).append(", ").append(camPos[1]).append(", ").append(camPos[2]).append(")\n");
+        sb.append("    cam_obj.rotation_euler = (math.radians(72), 0, 0)\n");
+        sb.append("except Exception as ce: print(f'Camera setup note: {ce}')\n\n");
+
+        sb.append("try:\n");
+        sb.append("    sun_data = bpy.data.lights.new('Sun', type='SUN')\n");
+        sb.append("    sun_data.energy = ").append(sunIntensity).append("\n");
+        sb.append("    sun_obj = bpy.data.objects.new('SunLight', sun_data)\n");
+        sb.append("    bpy.context.collection.objects.link(sun_obj)\n");
+        sb.append("    sun_obj.rotation_euler = (math.radians(45), math.radians(15), math.radians(-30))\n");
+        sb.append("except Exception as le: print(f'Lighting setup note: {le}')\n\n");
+
+        if (spec != null && spec.isUseVolumetrics()) {
+            sb.append("try:\n");
+            sb.append("    world = bpy.context.scene.world\n");
+            sb.append("    if world is None:\n");
+            sb.append("        world = bpy.data.worlds.new('World')\n");
+            sb.append("        bpy.context.scene.world = world\n");
+            sb.append("    world.use_nodes = True\n");
+            sb.append("    wnodes = world.node_tree.nodes\n");
+            sb.append("    wlinks = world.node_tree.links\n");
+            sb.append("    vol_node = wnodes.new('ShaderNodeVolumePrincipled')\n");
+            sb.append("    vol_node.inputs['Density'].default_value = ").append(spec.getVolumetricDensity()).append("\n");
+            sb.append("    w_output = wnodes.get('World Output')\n");
+            sb.append("    if w_output:\n");
+            sb.append("        wlinks.new(vol_node.outputs['Volume'], w_output.inputs['Volume'])\n");
+            sb.append("except Exception as ve: print(f'Volumetric setup note: {ve}')\n\n");
+        }
+
+        sb.append("# --- STEP 1: EXPORT INTERACTIVE 3D GLTF/GLB MODEL ---\n");
+        sb.append("try:\n");
+        sb.append("    bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB', export_skins=True, export_animations=True)\n");
+        sb.append("    print('3D GLTF Export Successful: output/model.glb')\n");
+        sb.append("except Exception as ge: print(f'GLTF export warning: {ge}')\n\n");
+
+        sb.append("# --- STEP 2: HEADLESS-SAFE CPU CYCLES PREVIEW RENDER ---\n");
+        sb.append("try:\n");
+        sb.append("    bpy.context.scene.render.engine = 'CYCLES'\n");
+        sb.append("    bpy.context.scene.cycles.device = 'CPU'\n");
+        sb.append("    bpy.context.scene.cycles.samples = 16\n");
+        sb.append("    bpy.context.scene.render.resolution_x = 1280\n");
+        sb.append("    bpy.context.scene.render.resolution_y = 720\n");
+        sb.append("    bpy.context.scene.render.filepath = 'output/render.png'\n");
+        sb.append("    bpy.ops.render.render(write_still=True)\n");
+        sb.append("    print('Cycles preview render complete: output/render.png')\n");
+        sb.append("except Exception as re: print(f'Preview render note: {re}')\n");
+
+        return sb.toString();
+    }
+
+    private String cleanPythonCode(String raw) {
+        if (raw == null) return "";
+        String code = raw.trim();
+        if (code.startsWith("```python")) {
+            code = code.substring(9);
+        } else if (code.startsWith("```")) {
+            code = code.substring(3);
+        }
+        if (code.endsWith("```")) {
+            code = code.substring(0, code.length() - 3);
+        }
+        return code.trim();
     }
 
     private void executeStructuredGeminiPlanning(final AIProductionRequest request, 
@@ -208,7 +427,7 @@ public class AIOrchestrator {
     }
 
     /**
-     * Direct Blender Python script generation using Director + Worker pipeline.
+     * Direct Blender Python script generation using Director + Dynamic AI Script Writer pipeline.
      */
     public void planBlenderProduction(final String prompt, final GeminiApiClient.ApiCallback<String> callback) {
         if (!apiKeyManager.hasApiKey()) {
@@ -218,10 +437,33 @@ public class AIOrchestrator {
 
         directorAgent.formulateDirectorSpec(prompt, "Photorealistic", new ArrayList<>(), new DirectorAgent.DirectorCallback() {
             @Override
-            public void onSpecReady(AIDirectorSpec spec) {
-                BlenderWorkerAgent.WorkerScripts scripts = 
-                        BlenderWorkerAgent.generateModularScripts(prompt, spec, "asset_" + System.currentTimeMillis());
-                callback.onSuccess(scripts.compositeMasterScript);
+            public void onSpecReady(final AIDirectorSpec spec) {
+                if (isDemoPreset(prompt)) {
+                    ProductionPlan demoPlan = promptInterpreter.createProductionPlan(prompt, "Photorealistic", "Blender Native");
+                    for (TaskNode node : demoPlan.getTaskGraph().getAllNodes()) {
+                        if (node.getOperation() != null && "blender.cloud_generate".equalsIgnoreCase(node.getOperation().getToolId())) {
+                            String script = (String) node.getOperation().getParam("bpyScript");
+                            if (script != null && !script.isEmpty()) {
+                                callback.onSuccess(script);
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                // Dynamic Generation for custom prompts
+                dispatchDynamicScriptWriter(prompt, "Photorealistic", spec, new GeminiApiClient.ApiCallback<String>() {
+                    @Override
+                    public void onSuccess(String dynamicBpyCode) {
+                        String wrappedScript = wrapDynamicScriptWithSafety(dynamicBpyCode, spec);
+                        callback.onSuccess(wrappedScript);
+                    }
+
+                    @Override
+                    public void onError(String errorMessage) {
+                        callback.onError(errorMessage);
+                    }
+                });
             }
 
             @Override
