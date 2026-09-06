@@ -86,11 +86,17 @@ public class PromptInterpreter {
             AIDirectorSpec spec = new AIDirectorSpec();
             String lowerPrompt = (userPrompt != null) ? userPrompt.toLowerCase().trim() : "";
 
-            // Collision-free demo preset detection
-            boolean isVillaDemo = lowerPrompt.contains("realistic modern villa with a swimming pool") 
+            // Collision-free demo preset detection (Ensuring 'village' NEVER matches 'villa')
+            boolean isVillageDemo = lowerPrompt.contains("high-detail tropical village environment") 
+                    || lowerPrompt.contains("tropical village") 
+                    || lowerPrompt.contains("village");
+
+            boolean isVillaDemo = !isVillageDemo && (
+                    lowerPrompt.contains("realistic modern villa with a swimming pool") 
                     || lowerPrompt.contains("modern villa & pool")
                     || lowerPrompt.contains("modern villa & swimming pool")
-                    || (lowerPrompt.contains("villa") && !lowerPrompt.contains("sofa"));
+                    || lowerPrompt.contains("modern villa")
+                    || (lowerPrompt.contains("villa") && !lowerPrompt.contains("sofa")));
 
             boolean isSofaDemo = lowerPrompt.contains("modern luxury leather sofa") 
                     || lowerPrompt.contains("leather sofa") 
@@ -103,10 +109,6 @@ public class PromptInterpreter {
             boolean isDogDemo = lowerPrompt.contains("animated quadruped dog model") 
                     || lowerPrompt.contains("animated dog") 
                     || (lowerPrompt.contains("dog") && !lowerPrompt.contains("villa"));
-
-            boolean isVillageDemo = lowerPrompt.contains("high-detail tropical village environment") 
-                    || lowerPrompt.contains("tropical village") 
-                    || (lowerPrompt.contains("village") && !lowerPrompt.contains("villa"));
 
             if (isVillaDemo) {
                 spec.setSceneType("modern_architecture");
@@ -139,7 +141,7 @@ public class PromptInterpreter {
             BlenderWorkerAgent.WorkerScripts modularScripts = 
                     BlenderWorkerAgent.generateModularScripts(userPrompt, spec, assetId);
 
-            // 2. Build Procedural Scene Script (Full procedural definitions for verified demo presets)
+            // 2. Build Procedural Scene Script (Full multi-material procedural definitions for verified demo presets)
             StringBuilder defaultBpyScript = new StringBuilder();
             defaultBpyScript.append("import bpy\n");
             defaultBpyScript.append("import os\n");
@@ -158,7 +160,6 @@ public class PromptInterpreter {
 
             if (isSuperheroDemo) {
                 defaultBpyScript.append("# --- High-Detail Procedural Rigged Superhero Character ---\n");
-                defaultBpyScript.append("# Materials\n");
                 defaultBpyScript.append("mat_suit = bpy.data.materials.new(name='Suit_Material')\n");
                 defaultBpyScript.append("mat_suit.use_nodes = True\n");
                 defaultBpyScript.append("bsdf_suit = mat_suit.node_tree.nodes.get('Principled BSDF')\n");
@@ -369,72 +370,157 @@ public class PromptInterpreter {
                 defaultBpyScript.append("    dog_mesh.parent = arm_obj\n\n");
 
             } else if (isVillaDemo) {
-                defaultBpyScript.append("# --- Procedural Modern Architectural Villa & Pool ---\n");
-                defaultBpyScript.append("mat_wall = bpy.data.materials.new('Villa_Stucco')\n");
-                defaultBpyScript.append("mat_wall.use_nodes = True\n");
-                defaultBpyScript.append("bw = mat_wall.node_tree.nodes.get('Principled BSDF')\n");
-                defaultBpyScript.append("if bw: bw.inputs['Base Color'].default_value = (0.95, 0.95, 0.92, 1.0)\n\n");
+                defaultBpyScript.append("# --- High-Detail Architectural Modern Villa & Pool ---\n");
+                // Rich PBR Materials
+                defaultBpyScript.append("mat_stucco = bpy.data.materials.new('Villa_WarmStucco')\n");
+                defaultBpyScript.append("mat_stucco.use_nodes = True\n");
+                defaultBpyScript.append("bs_s = mat_stucco.node_tree.nodes.get('Principled BSDF')\n");
+                defaultBpyScript.append("if bs_s: bs_s.inputs['Base Color'].default_value = (0.88, 0.86, 0.82, 1.0); bs_s.inputs['Roughness'].default_value = 0.45\n\n");
 
-                defaultBpyScript.append("mat_glass = bpy.data.materials.new('Villa_Glass')\n");
+                defaultBpyScript.append("mat_wood = bpy.data.materials.new('Timber_DarkTeak')\n");
+                defaultBpyScript.append("mat_wood.use_nodes = True\n");
+                defaultBpyScript.append("bs_w = mat_wood.node_tree.nodes.get('Principled BSDF')\n");
+                defaultBpyScript.append("if bs_w: bs_w.inputs['Base Color'].default_value = (0.32, 0.18, 0.09, 1.0); bs_w.inputs['Roughness'].default_value = 0.55\n\n");
+
+                defaultBpyScript.append("mat_stone = bpy.data.materials.new('Dark_Basalt_Stone')\n");
+                defaultBpyScript.append("mat_stone.use_nodes = True\n");
+                defaultBpyScript.append("bs_st = mat_stone.node_tree.nodes.get('Principled BSDF')\n");
+                defaultBpyScript.append("if bs_st: bs_st.inputs['Base Color'].default_value = (0.12, 0.13, 0.15, 1.0); bs_st.inputs['Roughness'].default_value = 0.35\n\n");
+
+                defaultBpyScript.append("mat_glass = bpy.data.materials.new('Architectural_Glass')\n");
                 defaultBpyScript.append("mat_glass.use_nodes = True\n");
-                defaultBpyScript.append("bg = mat_glass.node_tree.nodes.get('Principled BSDF')\n");
-                defaultBpyScript.append("if bg:\n");
-                defaultBpyScript.append("    bg.inputs['Base Color'].default_value = (0.8, 0.9, 1.0, 0.3)\n");
-                defaultBpyScript.append("    bg.inputs['Transmission Weight'].default_value = 0.95 if 'Transmission Weight' in bg.inputs else 0.95\n");
-                defaultBpyScript.append("    bg.inputs['Roughness'].default_value = 0.02\n\n");
+                defaultBpyScript.append("bs_g = mat_glass.node_tree.nodes.get('Principled BSDF')\n");
+                defaultBpyScript.append("if bs_g:\n");
+                defaultBpyScript.append("    bs_g.inputs['Base Color'].default_value = (0.85, 0.92, 1.0, 0.2)\n");
+                defaultBpyScript.append("    if 'Transmission Weight' in bs_g.inputs: bs_g.inputs['Transmission Weight'].default_value = 0.95\n");
+                defaultBpyScript.append("    elif 'Transmission' in bs_g.inputs: bs_g.inputs['Transmission'].default_value = 0.95\n");
+                defaultBpyScript.append("    bs_g.inputs['Roughness'].default_value = 0.02\n\n");
 
-                defaultBpyScript.append("# Ground Deck Floor\n");
-                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 0.1))\n");
-                defaultBpyScript.append("deck = bpy.context.active_object\n");
-                defaultBpyScript.append("deck.name = 'Wooden_Deck'\n");
-                defaultBpyScript.append("deck.scale = (24, 18, 0.2)\n");
-                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n\n");
+                defaultBpyScript.append("mat_frame = bpy.data.materials.new('Black_Aluminum_Frames')\n");
+                defaultBpyScript.append("mat_frame.use_nodes = True\n");
+                defaultBpyScript.append("bs_f = mat_frame.node_tree.nodes.get('Principled BSDF')\n");
+                defaultBpyScript.append("if bs_f: bs_f.inputs['Base Color'].default_value = (0.05, 0.05, 0.06, 1.0); bs_f.inputs['Metallic'].default_value = 0.85; bs_f.inputs['Roughness'].default_value = 0.2\n\n");
 
-                defaultBpyScript.append("# Main Ground Pavilion\n");
-                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(-3, 0, 2.0))\n");
-                defaultBpyScript.append("ground_floor = bpy.context.active_object\n");
-                defaultBpyScript.append("ground_floor.name = 'Ground_Pavilion'\n");
-                defaultBpyScript.append("ground_floor.scale = (12, 10, 3.6)\n");
+                defaultBpyScript.append("mat_water = bpy.data.materials.new('Pool_Turquoise_Water')\n");
+                defaultBpyScript.append("mat_water.use_nodes = True\n");
+                defaultBpyScript.append("bs_wt = mat_water.node_tree.nodes.get('Principled BSDF')\n");
+                defaultBpyScript.append("if bs_wt:\n");
+                defaultBpyScript.append("    bs_wt.inputs['Base Color'].default_value = (0.02, 0.55, 0.75, 0.8)\n");
+                defaultBpyScript.append("    bs_wt.inputs['Roughness'].default_value = 0.05\n");
+                defaultBpyScript.append("    if 'Transmission Weight' in bs_wt.inputs: bs_wt.inputs['Transmission Weight'].default_value = 0.95\n\n");
+
+                defaultBpyScript.append("mat_warm_led = bpy.data.materials.new('Warm_Roof_LED')\n");
+                defaultBpyScript.append("mat_warm_led.use_nodes = True\n");
+                defaultBpyScript.append("bs_wl = mat_warm_led.node_tree.nodes.get('Principled BSDF')\n");
+                defaultBpyScript.append("if bs_wl:\n");
+                defaultBpyScript.append("    bs_wl.inputs['Base Color'].default_value = (1.0, 0.75, 0.4, 1.0)\n");
+                defaultBpyScript.append("    if 'Emission Color' in bs_wl.inputs: bs_wl.inputs['Emission Color'].default_value = (1.0, 0.75, 0.4, 1.0); bs_wl.inputs['Emission Strength'].default_value = 15.0\n");
+                defaultBpyScript.append("    elif 'Emission' in bs_wl.inputs: bs_wl.inputs['Emission'].default_value = (1.0, 0.75, 0.4, 1.0)\n\n");
+
+                // Main Architectural Foundations
+                defaultBpyScript.append("# 1. Dark Basalt Pool Patio Base\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, -0.2))\n");
+                defaultBpyScript.append("patio = bpy.context.active_object\n");
+                defaultBpyScript.append("patio.name = 'Basalt_Patio_Base'\n");
+                defaultBpyScript.append("patio.scale = (26, 20, 0.4)\n");
                 defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
-                defaultBpyScript.append("ground_floor.data.materials.append(mat_wall)\n\n");
+                defaultBpyScript.append("patio.data.materials.append(mat_stone)\n\n");
 
-                defaultBpyScript.append("# Second Floor Cantilever Suite\n");
-                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(-1, 1.5, 4.8))\n");
-                defaultBpyScript.append("second_floor = bpy.context.active_object\n");
-                defaultBpyScript.append("second_floor.name = 'Upper_Cantilever'\n");
-                defaultBpyScript.append("second_floor.scale = (9, 8, 2.8)\n");
+                defaultBpyScript.append("# 2. Warm Wooden Pool Deck Terrace\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(-2, -1, 0.1))\n");
+                defaultBpyScript.append("wood_deck = bpy.context.active_object\n");
+                defaultBpyScript.append("wood_deck.name = 'Warm_Timber_Deck'\n");
+                defaultBpyScript.append("wood_deck.scale = (14, 16, 0.2)\n");
                 defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
-                defaultBpyScript.append("second_floor.data.materials.append(mat_wall)\n\n");
+                defaultBpyScript.append("wood_deck.data.materials.append(mat_wood)\n\n");
 
-                defaultBpyScript.append("# Expansive Glass Curtain Windows\n");
-                defaultBpyScript.append("bpy.ops.mesh.primitive_plane_add(size=1, location=(3.02, 0, 2.0))\n");
+                defaultBpyScript.append("# 3. Ground Floor Stucco Pavilion with Bevel\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(-3, 2, 1.8))\n");
+                defaultBpyScript.append("ground_pav = bpy.context.active_object\n");
+                defaultBpyScript.append("ground_pav.name = 'Ground_Living_Pavilion'\n");
+                defaultBpyScript.append("ground_pav.scale = (12, 9, 3.2)\n");
+                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
+                defaultBpyScript.append("bev_g = ground_pav.modifiers.new('Bevel', 'BEVEL')\n");
+                defaultBpyScript.append("bev_g.width = 0.05\n");
+                defaultBpyScript.append("ground_pav.data.materials.append(mat_stucco)\n\n");
+
+                defaultBpyScript.append("# 4. Cantilevered Upper Suite Floor\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(-1, 3.2, 4.6))\n");
+                defaultBpyScript.append("upper_suite = bpy.context.active_object\n");
+                defaultBpyScript.append("upper_suite.name = 'Upper_Cantilever_Suite'\n");
+                defaultBpyScript.append("upper_suite.scale = (11, 8.5, 2.4)\n");
+                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
+                defaultBpyScript.append("bev_u = upper_suite.modifiers.new('Bevel', 'BEVEL')\n");
+                defaultBpyScript.append("bev_u.width = 0.05\n");
+                defaultBpyScript.append("upper_suite.data.materials.append(mat_stucco)\n\n");
+
+                defaultBpyScript.append("# 5. Vertical Timber Wood Slats (Facade Louvers)\n");
+                defaultBpyScript.append("for s_idx in range(16):\n");
+                defaultBpyScript.append("    sx = -5.5 + (s_idx * 0.45)\n");
+                defaultBpyScript.append("    bpy.ops.mesh.primitive_cube_add(size=1, location=(sx, -1.08, 4.6))\n");
+                defaultBpyScript.append("    slat = bpy.context.active_object\n");
+                defaultBpyScript.append("    slat.name = f'Timber_Slat_{s_idx}'\n");
+                defaultBpyScript.append("    slat.scale = (0.12, 0.22, 2.3)\n");
+                defaultBpyScript.append("    bpy.ops.object.transform_apply(scale=True)\n");
+                defaultBpyScript.append("    slat.data.materials.append(mat_wood)\n\n");
+
+                defaultBpyScript.append("# 6. Black Aluminum Window Frames & Glass Curtain Facade\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(2.98, -2.48, 1.8))\n");
+                defaultBpyScript.append("w_frame = bpy.context.active_object\n");
+                defaultBpyScript.append("w_frame.name = 'Window_Frame_Border'\n");
+                defaultBpyScript.append("w_frame.scale = (0.1, 7.8, 2.8)\n");
+                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
+                defaultBpyScript.append("w_frame.data.materials.append(mat_frame)\n\n");
+
+                defaultBpyScript.append("bpy.ops.mesh.primitive_plane_add(size=1, location=(3.02, -2.48, 1.8))\n");
                 defaultBpyScript.append("glass = bpy.context.active_object\n");
                 defaultBpyScript.append("glass.name = 'Glass_Curtain_Wall'\n");
                 defaultBpyScript.append("glass.rotation_euler = (0, 1.5708, 0)\n");
-                defaultBpyScript.append("glass.scale = (3.2, 8.0, 1.0)\n");
+                defaultBpyScript.append("glass.scale = (2.7, 7.6, 1.0)\n");
                 defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
                 defaultBpyScript.append("glass.data.materials.append(mat_glass)\n\n");
 
-                defaultBpyScript.append("# Recessed Swimming Pool Basin\n");
-                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(6, 0, -0.5))\n");
+                defaultBpyScript.append("# 7. Upper Balcony Glass Railing\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(-1, -1.02, 3.8))\n");
+                defaultBpyScript.append("railing = bpy.context.active_object\n");
+                defaultBpyScript.append("railing.name = 'Balcony_Glass_Railing'\n");
+                defaultBpyScript.append("railing.scale = (10.8, 0.08, 0.9)\n");
+                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
+                defaultBpyScript.append("railing.data.materials.append(mat_glass)\n\n");
+
+                defaultBpyScript.append("# 8. Recessed Warm LED Strip Under Roof Overhang\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(-1, -1.05, 5.82))\n");
+                defaultBpyScript.append("roof_led = bpy.context.active_object\n");
+                defaultBpyScript.append("roof_led.name = 'Warm_Roof_LED_Strip'\n");
+                defaultBpyScript.append("roof_led.scale = (11.2, 0.15, 0.06)\n");
+                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
+                defaultBpyScript.append("roof_led.data.materials.append(mat_warm_led)\n\n");
+
+                defaultBpyScript.append("# 9. Recessed Swimming Pool Basin & Turquoise Water\n");
+                defaultBpyScript.append("bpy.ops.mesh.primitive_cube_add(size=1, location=(6.5, 0, -0.4))\n");
                 defaultBpyScript.append("pool_basin = bpy.context.active_object\n");
                 defaultBpyScript.append("pool_basin.name = 'Pool_Basin'\n");
-                defaultBpyScript.append("pool_basin.scale = (6, 12, 1.2)\n");
-                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n\n");
-
-                defaultBpyScript.append("# Pool Water Plane\n");
-                defaultBpyScript.append("bpy.ops.mesh.primitive_plane_add(size=1, location=(6, 0, -0.05))\n");
-                defaultBpyScript.append("water = bpy.context.active_object\n");
-                defaultBpyScript.append("water.name = 'Pool_Water'\n");
-                defaultBpyScript.append("water.scale = (5.6, 11.6, 1)\n");
+                defaultBpyScript.append("pool_basin.scale = (6.2, 13.0, 1.0)\n");
                 defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
-                defaultBpyScript.append("mat_water = bpy.data.materials.new('Pool_Water_Mat')\n");
-                defaultBpyScript.append("mat_water.use_nodes = True\n");
-                defaultBpyScript.append("bw_node = mat_water.node_tree.nodes.get('Principled BSDF')\n");
-                defaultBpyScript.append("if bw_node:\n");
-                defaultBpyScript.append("    bw_node.inputs['Base Color'].default_value = (0.0, 0.75, 0.9, 0.7)\n");
-                defaultBpyScript.append("    bw_node.inputs['Roughness'].default_value = 0.05\n");
+                defaultBpyScript.append("pool_basin.data.materials.append(mat_stone)\n\n");
+
+                defaultBpyScript.append("bpy.ops.mesh.primitive_plane_add(size=1, location=(6.5, 0, 0.02))\n");
+                defaultBpyScript.append("water = bpy.context.active_object\n");
+                defaultBpyScript.append("water.name = 'Pool_Water_Surface'\n");
+                defaultBpyScript.append("water.scale = (5.8, 12.6, 1.0)\n");
+                defaultBpyScript.append("bpy.ops.object.transform_apply(scale=True)\n");
                 defaultBpyScript.append("water.data.materials.append(mat_water)\n\n");
+
+                defaultBpyScript.append("# 10. Poolside Woven Sun Loungers\n");
+                defaultBpyScript.append("for l_idx, ly in enumerate([-3.5, 1.5]):\n");
+                defaultBpyScript.append("    bpy.ops.mesh.primitive_cube_add(size=1, location=(2.2, ly, 0.35))\n");
+                defaultBpyScript.append("    lounger = bpy.context.active_object\n");
+                defaultBpyScript.append("    lounger.name = f'Sun_Lounger_{l_idx}'\n");
+                defaultBpyScript.append("    lounger.scale = (1.2, 2.4, 0.3)\n");
+                defaultBpyScript.append("    bpy.ops.object.transform_apply(scale=True)\n");
+                defaultBpyScript.append("    bev_l = lounger.modifiers.new('Bevel', 'BEVEL')\n");
+                defaultBpyScript.append("    bev_l.width = 0.06\n");
+                defaultBpyScript.append("    lounger.data.materials.append(mat_wood)\n\n");
 
             } else if (isSofaDemo) {
                 defaultBpyScript.append("# --- High-End Luxury Leather Sofa ---\n");
@@ -591,11 +677,11 @@ public class PromptInterpreter {
             defaultBpyScript.append("try:\n");
             defaultBpyScript.append("    if not bpy.context.scene.camera:\n");
             defaultBpyScript.append("        cam_data = bpy.data.cameras.new('SceneCamera')\n");
-            defaultBpyScript.append("        cam_data.lens = 40.0\n");
+            defaultBpyScript.append("        cam_data.lens = 38.0\n");
             defaultBpyScript.append("        cam_obj = bpy.data.objects.new('Camera', cam_data)\n");
             defaultBpyScript.append("        bpy.context.collection.objects.link(cam_obj)\n");
             defaultBpyScript.append("        bpy.context.scene.camera = cam_obj\n");
-            defaultBpyScript.append("        cam_obj.location = (0, -18, 10)\n");
+            defaultBpyScript.append("        cam_obj.location = (0, -22, 10)\n");
             defaultBpyScript.append("        cam_obj.rotation_euler = (math.radians(65), 0, 0)\n");
             defaultBpyScript.append("except Exception as ce: print(f'Camera setup note: {ce}')\n\n");
 
@@ -603,7 +689,7 @@ public class PromptInterpreter {
             defaultBpyScript.append("# Step 1: Export Interactive 3D Model (First Priority)\n");
             defaultBpyScript.append("try:\n");
             defaultBpyScript.append("    bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n");
-            defaultBpyScript.append("    print('3D GLTF Export Successful.')\n");
+            defaultBpyScript.append("    print('3D GLTF Export Successful: output/model.glb')\n");
             defaultBpyScript.append("except Exception as ge: print(f'GLTF export warning: {ge}')\n\n");
 
             // 2. Render Still Preview Image using Headless-Safe Cycles CPU Engine
