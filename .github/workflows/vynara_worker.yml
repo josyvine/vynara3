@@ -38,19 +38,42 @@ jobs:
         run: |
           mkdir -p output
           
-          # Write the Python script using a quoted heredoc to prevent bash string mangling
+          # Write the Python script using direct event payload parsing to prevent shell mangling
           python3 - << 'EOF'
-          import os
+          import json, os, sys
 
-          bpy_script = os.environ.get('BPY_SCRIPT', '')
-          w1 = os.environ.get('W1_HERO', '')
-          w2 = os.environ.get('W2_ENV', '')
-          w3 = os.environ.get('W3_LIGHT', '')
+          event_path = os.environ.get('GITHUB_EVENT_PATH')
+          bpy_script = ''
+          w1 = ''
+          w2 = ''
+          w3 = ''
+
+          if event_path and os.path.exists(event_path):
+              try:
+                  with open(event_path, 'r', encoding='utf-8') as ef:
+                      event_data = json.load(ef)
+                      payload = event_data.get('client_payload', {})
+                      bpy_script = payload.get('bpy_script', '')
+                      w1 = payload.get('w1HeroScript', '')
+                      w2 = payload.get('w2EnvScript', '')
+                      w3 = payload.get('w3LightScript', '')
+              except Exception as e:
+                  print(f"Note on GITHUB_EVENT_PATH read: {e}")
+
+          # Fallback to environment variables if event file reading is unavailable
+          if not bpy_script:
+              bpy_script = os.environ.get('BPY_SCRIPT', '')
+          if not w1:
+              w1 = os.environ.get('W1_HERO', '')
+          if not w2:
+              w2 = os.environ.get('W2_ENV', '')
+          if not w3:
+              w3 = os.environ.get('W3_LIGHT', '')
 
           # If modular sub-scripts are passed separately, assemble them
           if not bpy_script.strip() and (w1.strip() or w2.strip() or w3.strip()):
               bpy_script = (
-                  "import bpy, os, math, random\n"
+                  "import bpy, os, math, random, sys\n"
                   "import addon_utils\n\n"
                   "try:\n"
                   "    addon_utils.enable('archimesh')\n"
@@ -62,35 +85,41 @@ jobs:
                   f"{w1}\n\n{w2}\n\n{w3}\n"
               )
 
-          # Fallback script if payload script is completely empty
+          # Fail fast if payload is completely empty (no fallback default boxes)
           if not bpy_script.strip():
-              bpy_script = (
+              err_msg = "FATAL ERROR: No Blender Python script provided in payload."
+              print(err_msg)
+              with open('output/error.txt', 'w', encoding='utf-8') as ef:
+                  ef.write(err_msg + '\n')
+              sys.exit(1)
+
+          # Ensure standardized GLTF/GLB export command exists
+          if 'export_scene.gltf' not in bpy_script:
+              bpy_script += (
+                  "\n\n# Fallback Standard Exporter\n"
                   "import bpy, os\n"
                   "os.makedirs('output', exist_ok=True)\n"
-                  "bpy.ops.object.select_all(action='SELECT')\n"
-                  "bpy.ops.object.delete(use_global=False)\n"
-                  "bpy.ops.mesh.primitive_cube_add(size=2)\n"
-                  "bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
+                  "try:\n"
+                  "    bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB', export_skins=True, export_animations=True)\n"
+                  "    print('3D GLTF Export Successful: output/model.glb')\n"
+                  "except Exception as ge: print(f'GLTF export warning: {ge}')\n"
               )
-
-          # Ensure GLTF export command exists in script
-          if 'export_scene.gltf' not in bpy_script:
-              bpy_script += "\nimport bpy, os\nos.makedirs('output', exist_ok=True)\nbpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
 
           with open('run_task.py', 'w', encoding='utf-8') as f:
               f.write(bpy_script)
 
           EOF
 
-          # Run headless Blender and capture output log
+          # Run headless Blender and capture full execution log
           /opt/blender/blender -b -P run_task.py 2>&1 | tee output/blender_execution.log || true
 
-          # Verify output files
+          # Verify output files and log failures with terminal context
           if [ -f output/model.glb ]; then
             echo "SUCCESS: model.glb generated successfully."
           else
             echo "ERROR: Blender failed to output model.glb" > output/error.txt
-            tail -n 30 output/blender_execution.log >> output/error.txt
+            echo "--- TERMINAL TRACEBACK ---" >> output/error.txt
+            tail -n 40 output/blender_execution.log >> output/error.txt
             exit 1
           fi
 
@@ -99,6 +128,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ github.event.client_payload.asset_id }}
+          name: ${{ github.event.client_payload.asset_id || 'vynara-artifact' }}
           path: output/
           if-no-files-found: warn
