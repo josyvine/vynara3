@@ -69,6 +69,8 @@ public class PromptInterpreter {
             TaskNode t0 = new TaskNode(referenceTaskId, "Processing Reference Images",
                     "Ingesting " + plan.getReferenceImageUris().size() + " visual reference image(s) for Director Spec", refOp);
             t0.addDependency(clearTaskId);
+            // Pre-complete this task: Gemini Vision already ingested images in Phase 1
+            t0.setStatus(TaskNode.Status.COMPLETED);
             graph.addTask(t0);
         }
 
@@ -584,6 +586,19 @@ public class PromptInterpreter {
             defaultBpyScript.append("fill = bpy.context.active_object\n");
             defaultBpyScript.append("fill.data.energy = 800.0\n\n");
 
+            // Setup Scene Camera for Preview Rendering
+            defaultBpyScript.append("# Setup Scene Camera for Preview Rendering\n");
+            defaultBpyScript.append("try:\n");
+            defaultBpyScript.append("    if not bpy.context.scene.camera:\n");
+            defaultBpyScript.append("        cam_data = bpy.data.cameras.new('SceneCamera')\n");
+            defaultBpyScript.append("        cam_data.lens = 40.0\n");
+            defaultBpyScript.append("        cam_obj = bpy.data.objects.new('Camera', cam_data)\n");
+            defaultBpyScript.append("        bpy.context.collection.objects.link(cam_obj)\n");
+            defaultBpyScript.append("        bpy.context.scene.camera = cam_obj\n");
+            defaultBpyScript.append("        cam_obj.location = (0, -18, 10)\n");
+            defaultBpyScript.append("        cam_obj.rotation_euler = (math.radians(65), 0, 0)\n");
+            defaultBpyScript.append("except Exception as ce: print(f'Camera setup note: {ce}')\n\n");
+
             // 1. ALWAYS Export 3D GLTF Model FIRST (Guarantees model.glb exists on disk)
             defaultBpyScript.append("# Step 1: Export Interactive 3D Model (First Priority)\n");
             defaultBpyScript.append("try:\n");
@@ -594,14 +609,17 @@ public class PromptInterpreter {
             // 2. Render Still Preview Image using Headless-Safe Cycles CPU Engine
             defaultBpyScript.append("# Step 2: Render Photorealistic Still Preview Image via CPU Cycles\n");
             defaultBpyScript.append("try:\n");
-            defaultBpyScript.append("    bpy.context.scene.render.engine = 'CYCLES'\n");
-            defaultBpyScript.append("    bpy.context.scene.cycles.device = 'CPU'\n");
-            defaultBpyScript.append("    bpy.context.scene.cycles.samples = 16\n");
-            defaultBpyScript.append("    bpy.context.scene.render.resolution_x = 1280\n");
-            defaultBpyScript.append("    bpy.context.scene.render.resolution_y = 720\n");
-            defaultBpyScript.append("    bpy.context.scene.render.filepath = 'output/render.png'\n");
-            defaultBpyScript.append("    bpy.ops.render.render(write_still=True)\n");
-            defaultBpyScript.append("    print('Cycles preview render complete.')\n");
+            defaultBpyScript.append("    if bpy.context.scene.camera:\n");
+            defaultBpyScript.append("        bpy.context.scene.render.engine = 'CYCLES'\n");
+            defaultBpyScript.append("        bpy.context.scene.cycles.device = 'CPU'\n");
+            defaultBpyScript.append("        bpy.context.scene.cycles.samples = 16\n");
+            defaultBpyScript.append("        bpy.context.scene.render.resolution_x = 1280\n");
+            defaultBpyScript.append("        bpy.context.scene.render.resolution_y = 720\n");
+            defaultBpyScript.append("        bpy.context.scene.render.filepath = 'output/render.png'\n");
+            defaultBpyScript.append("        bpy.ops.render.render(write_still=True)\n");
+            defaultBpyScript.append("        print('Cycles preview render complete: output/render.png')\n");
+            defaultBpyScript.append("    else:\n");
+            defaultBpyScript.append("        print('Skipping preview render: No active camera.')\n");
             defaultBpyScript.append("except Exception as re: print(f'Preview render note: {re}')\n");
 
             // Build ToolOperation incorporating both your procedural script AND the modular sub-scripts
