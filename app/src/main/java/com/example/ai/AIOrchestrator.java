@@ -442,7 +442,7 @@ public class AIOrchestrator {
                     ProductionPlan demoPlan = promptInterpreter.createProductionPlan(prompt, "Photorealistic", "Blender Native");
                     for (TaskNode node : demoPlan.getTaskGraph().getAllNodes()) {
                         if (node.getOperation() != null && "blender.cloud_generate".equalsIgnoreCase(node.getOperation().getToolId())) {
-                            String script = (String) node.getOperation().getParam("bpyScript");
+                            String script = node.getOperation().getStringParam("bpyScript", "");
                             if (script != null && !script.isEmpty()) {
                                 callback.onSuccess(script);
                                 return;
