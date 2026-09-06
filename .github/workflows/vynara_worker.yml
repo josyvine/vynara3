@@ -93,10 +93,31 @@ jobs:
                   ef.write(err_msg + '\n')
               sys.exit(1)
 
+          # Ensure an active camera exists if render is invoked
+          if 'bpy.ops.render.render' in bpy_script:
+              camera_safeguard = (
+                  "\n\n# Workflow Camera Safeguard\n"
+                  "try:\n"
+                  "    if not bpy.context.scene.camera:\n"
+                  "        _cam_data = bpy.data.cameras.new('WorkflowCamera')\n"
+                  "        _cam_data.lens = 45.0\n"
+                  "        _cam_obj = bpy.data.objects.new('Camera', _cam_data)\n"
+                  "        bpy.context.collection.objects.link(_cam_obj)\n"
+                  "        bpy.context.scene.camera = _cam_obj\n"
+                  "        _cam_obj.location = (0, -16, 9)\n"
+                  "        _cam_obj.rotation_euler = (math.radians(65), 0, 0)\n"
+                  "except Exception as _ce: print(f'Camera safeguard note: {_ce}')\n"
+              )
+              if 'bpy.ops.export_scene.gltf' in bpy_script:
+                  idx = bpy_script.find('bpy.ops.export_scene.gltf')
+                  bpy_script = bpy_script[:idx] + camera_safeguard + "\n" + bpy_script[idx:]
+              else:
+                  bpy_script += camera_safeguard
+
           # Ensure standardized GLTF/GLB export command exists
           if 'export_scene.gltf' not in bpy_script:
               bpy_script += (
-                  "\n\n# Fallback Standard Exporter\n"
+                  "\n\n# Standard Model Exporter\n"
                   "import bpy, os\n"
                   "os.makedirs('output', exist_ok=True)\n"
                   "try:\n"
