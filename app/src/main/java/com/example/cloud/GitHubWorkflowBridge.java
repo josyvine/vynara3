@@ -40,6 +40,8 @@ public class GitHubWorkflowBridge {
     private static final int MAX_ARTIFACT_RETRY_ATTEMPTS = 8; // 8 retries (20s window for run-specific artifact indexing)
     private static final long ARTIFACT_RETRY_DELAY_MS = 2500; // 2.5 seconds between artifact retries
 
+    private static volatile String sLastBlenderError = null;
+
     private final OkHttpClient httpClient;
     private final Handler mainHandler;
 
@@ -272,6 +274,11 @@ public class GitHubWorkflowBridge {
                         }
                     }
 
+                    // Fallback to first artifact if specific name mapping fails
+                    if (downloadLocationUrl == null && artifacts.length() > 0) {
+                        downloadLocationUrl = artifacts.getJSONObject(0).optString("archive_download_url", null);
+                    }
+
                     if (downloadLocationUrl == null) {
                         mainHandler.post(() -> callback.onError("Artifact matching assetId '" + assetId + "' not ready yet."));
                         return;
@@ -334,6 +341,11 @@ public class GitHubWorkflowBridge {
                         }
                     }
 
+                    // Fallback to first available artifact if name pattern does not match
+                    if (downloadLocationUrl == null && artifacts.length() > 0) {
+                        downloadLocationUrl = artifacts.getJSONObject(0).optString("archive_download_url", null);
+                    }
+
                     if (downloadLocationUrl == null) {
                         mainHandler.post(() -> callback.onError("Target GLB artifact not ready for Run #" + runId));
                         return;
@@ -358,6 +370,7 @@ public class GitHubWorkflowBridge {
         }
 
         final long dispatchTimeMs = System.currentTimeMillis();
+        sLastBlenderError = null; // Reset previous error state
         VynaraLogger.system("GitHubWorkflowBridge: Starting workflow execution monitoring for assetId: " + assetId);
 
         final Runnable[] pollRunnable = new Runnable[1];
@@ -430,7 +443,7 @@ public class GitHubWorkflowBridge {
                                     VynaraLogger.system("GitHubWorkflowBridge: Active Run #" + runId + " Status: " + status + " Conclusion: " + conclusion);
                                     mainHandler.post(() -> callback.onStatusUpdate(status, "Run #" + runId + " [" + status + "]"));
 
-                                    // CRITICAL UPDATE: Download artifact even if conclusion is failure so we can extract error.txt and blender_execution.log!
+                                    // Download artifact even if conclusion is failure so we can extract error.txt and blender_execution.log!
                                     if ("completed".equalsIgnoreCase(status)) {
                                         VynaraLogger.system("GitHubWorkflowBridge: Workflow run #" + runId + " finished [" + conclusion + "]. Downloading artifacts...");
                                         mainHandler.post(() -> callback.onStatusUpdate("downloading", "Downloading worker artifacts..."));
@@ -485,8 +498,11 @@ public class GitHubWorkflowBridge {
                     mainHandler.post(() -> callback.onStatusUpdate("indexing", "Waiting for artifact indexing (" + attempt + "/" + maxAttempts + ")..."));
                     mainHandler.postDelayed(() -> pollAndDownloadArtifact(repository, personalAccessToken, runId, assetId, destinationFile, callback, attempt + 1, maxAttempts), ARTIFACT_RETRY_DELAY_MS);
                 } else {
-                    VynaraLogger.e("GitHubWorkflowBridge: Artifact download failed: " + errorMessage);
-                    callback.onError(errorMessage);
+                    String finalError = (sLastBlenderError != null && !sLastBlenderError.isEmpty())
+                            ? "Blender Worker Error: " + sLastBlenderError
+                            : "Artifact download failed: " + errorMessage;
+                    VynaraLogger.e("GitHubWorkflowBridge: " + finalError);
+                    callback.onError(finalError);
                 }
             }
         });
@@ -548,7 +564,10 @@ public class GitHubWorkflowBridge {
                     if (extracted && destinationFile.exists() && destinationFile.length() > 0) {
                         mainHandler.post(() -> callback.onSuccess(destinationFile));
                     } else {
-                        mainHandler.post(() -> callback.onError("Extracted file is missing or invalid."));
+                        String errorMsg = (sLastBlenderError != null && !sLastBlenderError.isEmpty())
+                                ? "Blender Execution Failed: " + sLastBlenderError
+                                : "Extracted 3D model is missing or invalid. Check diagnostic console for internal worker logs.";
+                        mainHandler.post(() -> callback.onError(errorMsg));
                     }
 
                 } catch (Exception ex) {
@@ -601,8 +620,8 @@ public class GitHubWorkflowBridge {
                         fos.flush();
                         VynaraLogger.system("GitHubWorkflowBridge: Extracted cinematic Cycles preview image: " + destinationImgFile.getName());
                     }
-                } else if (fileName.contains("blender_execution.log") || fileName.contains("error.txt") || fileName.endsWith(".log")) {
-                    // Stream Blender's internal A-to-Z execution output directly to VynaraLogger
+                } else if (fileName.contains("blender_execution.log") || fileName.contains("error.txt") || fileName.endsWith(".log") || fileName.contains("traceback")) {
+                    // Stream Blender's internal execution output directly to VynaraLogger and capture failures
                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
                     int len;
                     while ((len = zis.read(buffer)) > 0) {
@@ -614,8 +633,12 @@ public class GitHubWorkflowBridge {
                     String[] lines = logContent.split("\\r?\\n");
                     for (String line : lines) {
                         if (line.trim().isEmpty()) continue;
-                        if (line.toLowerCase().contains("error") || line.toLowerCase().contains("exception")) {
+                        String lowerLine = line.toLowerCase();
+                        if (lowerLine.contains("error") || lowerLine.contains("exception") 
+                                || lowerLine.contains("traceback") || lowerLine.contains("failed") 
+                                || lowerLine.contains("syntaxerror")) {
                             VynaraLogger.e("[BLENDER_WORKER] " + line.trim());
+                            sLastBlenderError = line.trim();
                         } else {
                             VynaraLogger.cloud("[BLENDER_WORKER] " + line.trim());
                         }
