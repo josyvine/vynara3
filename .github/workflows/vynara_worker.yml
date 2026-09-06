@@ -38,9 +38,9 @@ jobs:
         run: |
           mkdir -p output
           
-          # Write the Python script using direct event payload parsing to prevent shell mangling
+          # Write the Python script using Base64 decode and syntax validation
           python3 - << 'EOF'
-          import json, os, sys, re
+          import json, os, sys, re, base64, py_compile
 
           event_path = os.environ.get('GITHUB_EVENT_PATH')
           bpy_script = ''
@@ -53,7 +53,17 @@ jobs:
                   with open(event_path, 'r', encoding='utf-8') as ef:
                       event_data = json.load(ef)
                       payload = event_data.get('client_payload', {})
-                      bpy_script = payload.get('bpy_script', '')
+                      
+                      # Check for Base64 payload first (immune to quote-stripping)
+                      if 'bpy_script_b64' in payload and payload['bpy_script_b64'].strip():
+                          bpy_script = base64.b64decode(payload['bpy_script_b64']).decode('utf-8', errors='ignore')
+                      elif 'bpy_script' in payload:
+                          candidate = payload['bpy_script'].strip()
+                          if candidate.startswith('b64:'):
+                              bpy_script = base64.b64decode(candidate[4:]).decode('utf-8', errors='ignore')
+                          else:
+                              bpy_script = candidate
+                              
                       w1 = payload.get('w1HeroScript', '')
                       w2 = payload.get('w2EnvScript', '')
                       w3 = payload.get('w3LightScript', '')
@@ -62,13 +72,18 @@ jobs:
 
           # Fallback to environment variables if event file reading is unavailable
           if not bpy_script:
-              bpy_script = os.environ.get('BPY_SCRIPT', '')
-          if not w1:
-              w1 = os.environ.get('W1_HERO', '')
-          if not w2:
-              w2 = os.environ.get('W2_ENV', '')
-          if not w3:
-              w3 = os.environ.get('W3_LIGHT', '')
+              env_s = os.environ.get('BPY_SCRIPT', '').strip()
+              if env_s.startswith('b64:'):
+                  try:
+                      bpy_script = base64.b64decode(env_s[4:]).decode('utf-8', errors='ignore')
+                  except Exception:
+                      bpy_script = env_s
+              else:
+                  bpy_script = env_s
+
+          if not w1: w1 = os.environ.get('W1_HERO', '')
+          if not w2: w2 = os.environ.get('W2_ENV', '')
+          if not w3: w3 = os.environ.get('W3_LIGHT', '')
 
           # If modular sub-scripts are passed separately, assemble them
           if not bpy_script.strip() and (w1.strip() or w2.strip() or w3.strip()):
@@ -85,7 +100,7 @@ jobs:
                   f"{w1}\n\n{w2}\n\n{w3}\n"
               )
 
-          # Fail fast if payload is completely empty (no fallback default boxes)
+          # Fail fast if payload is completely empty
           if not bpy_script.strip():
               err_msg = "FATAL ERROR: No Blender Python script provided in payload."
               print(err_msg)
@@ -93,10 +108,13 @@ jobs:
                   ef.write(err_msg + '\n')
               sys.exit(1)
 
-          # Auto-Repair: Fix unquoted f-strings (e.g. fPool_LED_{i} -> f"Pool_LED_{i}")
+          # Auto-Repair 1: Fix unquoted node lookups (e.g. nodes.get(Principled BSDF) -> nodes.get("Principled BSDF"))
+          bpy_script = re.sub(r'nodes\.get\(\s*([A-Za-z0-9_ ]+)\s*\)', lambda m: f'nodes.get("{m.group(1).strip()}")' if '"' not in m.group(1) and "'" not in m.group(1) else m.group(0), bpy_script)
+
+          # Auto-Repair 2: Fix unquoted f-strings (e.g. fPool_LED_{i} -> f"Pool_LED_{i}")
           bpy_script = re.sub(r'(?<=[=\s,(])f([a-zA-Z0-9_]+\{[^}"\n]+\}[a-zA-Z0-9_]*)', r'f"\1"', bpy_script)
 
-          # Auto-Repair: Fix hallucinated Blender operators (_create instead of _add)
+          # Auto-Repair 3: Fix hallucinated Blender operators (_create instead of _add)
           bpy_script = bpy_script.replace(".primitive_cube_create(", ".primitive_cube_add(")
           bpy_script = bpy_script.replace(".primitive_plane_create(", ".primitive_plane_add(")
           bpy_script = bpy_script.replace(".primitive_cylinder_create(", ".primitive_cylinder_add(")
@@ -139,6 +157,13 @@ jobs:
 
           with open('run_task.py', 'w', encoding='utf-8') as f:
               f.write(bpy_script)
+
+          # Pre-compile syntax check
+          try:
+              py_compile.compile('run_task.py', doraise=True)
+              print("Python Syntax Pre-Check: PASSED")
+          except py_compile.PyCompileError as pe:
+              print(f"Syntax Validation Warning: {pe}")
 
           EOF
 
