@@ -73,7 +73,7 @@ jobs:
                   "bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
               )
 
-          # Ensure GLTF export and render commands exist
+          # Ensure GLTF export command exists in script
           if 'export_scene.gltf' not in bpy_script:
               bpy_script += "\nimport bpy, os\nos.makedirs('output', exist_ok=True)\nbpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n"
 
@@ -82,13 +82,16 @@ jobs:
 
           EOF
 
-          # Run headless Blender and capture output log
-          /opt/blender/blender -b -P run_task.py 2>&1 | tee output/blender_execution.log
+          # Run headless Blender and log output safely
+          /opt/blender/blender -b -P run_task.py 2>&1 | tee output/blender_execution.log || true
 
           # Verify output files
-          if [ ! -f output/model.glb ]; then
+          if [ -f output/model.glb ]; then
+            echo "SUCCESS: model.glb generated successfully."
+          else
             echo "ERROR: Blender failed to output model.glb" > output/error.txt
-            tail -n 25 output/blender_execution.log >> output/error.txt
+            tail -n 30 output/blender_execution.log >> output/error.txt
+            exit 1
           fi
 
       # Step 4: Upload both GLB model and Cycles render still image
