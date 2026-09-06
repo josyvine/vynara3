@@ -3,6 +3,7 @@ package com.example.cloud;
 import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
+import android.util.Base64;
 
 import com.example.utils.VynaraLogger;
 
@@ -179,7 +180,17 @@ public class GitHubWorkflowBridge {
         try {
             JSONObject clientPayload = new JSONObject();
             clientPayload.put("asset_id", assetId);
-            clientPayload.put("bpy_script", bpyScript);
+
+            // Shield Python code by encoding to Base64 to prevent any shell/bash quotation stripping
+            String safeScript = bpyScript != null ? bpyScript : "";
+            try {
+                String b64Script = Base64.encodeToString(safeScript.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+                clientPayload.put("bpy_script", "b64:" + b64Script);
+                clientPayload.put("bpy_script_b64", b64Script);
+            } catch (Exception e) {
+                clientPayload.put("bpy_script", safeScript);
+            }
+
             clientPayload.put("timestamp", System.currentTimeMillis());
 
             JSONObject rootPayload = new JSONObject();
@@ -429,7 +440,14 @@ public class GitHubWorkflowBridge {
                                         }
                                     } catch (Exception ignored) {}
 
-                                    if (runCreatedAtMs >= (dispatchTimeMs - 15000)) {
+                                    String status = r.optString("status", "unknown");
+
+                                    // Guard: Ignore previously finished runs that were created before this dispatch
+                                    if ("completed".equalsIgnoreCase(status) && runCreatedAtMs < (dispatchTimeMs - 2000)) {
+                                        continue;
+                                    }
+
+                                    if (runCreatedAtMs >= (dispatchTimeMs - 5000)) {
                                         targetRun = r;
                                         break;
                                     }
@@ -443,7 +461,6 @@ public class GitHubWorkflowBridge {
                                     VynaraLogger.system("GitHubWorkflowBridge: Active Run #" + runId + " Status: " + status + " Conclusion: " + conclusion);
                                     mainHandler.post(() -> callback.onStatusUpdate(status, "Run #" + runId + " [" + status + "]"));
 
-                                    // Download artifact even if conclusion is failure so we can extract error.txt and blender_execution.log!
                                     if ("completed".equalsIgnoreCase(status)) {
                                         VynaraLogger.system("GitHubWorkflowBridge: Workflow run #" + runId + " finished [" + conclusion + "]. Downloading artifacts...");
                                         mainHandler.post(() -> callback.onStatusUpdate("downloading", "Downloading worker artifacts..."));
