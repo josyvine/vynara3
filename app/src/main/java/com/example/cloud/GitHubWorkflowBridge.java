@@ -10,10 +10,12 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Locale;
 import java.util.TimeZone;
@@ -566,7 +568,7 @@ public class GitHubWorkflowBridge {
     }
 
     /**
-     * Extracts both the 3D model (.glb/.gltf) AND any rendered image (.png/.jpg) from the zip archive.
+     * Extracts the 3D model (.glb), preview image (.png), AND streams Blender's internal A-to-Z log.
      */
     private boolean extractGlbFromZip(File zipFile, File destinationGlbFile) {
         boolean glbFound = false;
@@ -591,7 +593,7 @@ public class GitHubWorkflowBridge {
                     }
                     glbFound = true;
                 } else if (fileName.endsWith(".png") || fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
-                    // Extract cinematic Cycles still render alongside the GLB model
+                    // Extract cinematic Cycles still render alongside GLB
                     String renderName = destinationGlbFile.getName();
                     int dotIdx = renderName.lastIndexOf('.');
                     String baseName = (dotIdx > 0) ? renderName.substring(0, dotIdx) : renderName;
@@ -605,6 +607,26 @@ public class GitHubWorkflowBridge {
                         fos.flush();
                         VynaraLogger.system("GitHubWorkflowBridge: Extracted cinematic Cycles preview image: " + destinationImgFile.getName());
                     }
+                } else if (fileName.contains("blender_execution.log") || fileName.contains("error.txt") || fileName.endsWith(".log")) {
+                    // Stream Blender's internal A-to-Z execution output directly to VynaraLogger
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        baos.write(buffer, 0, len);
+                    }
+                    String logContent = baos.toString(StandardCharsets.UTF_8.name());
+
+                    VynaraLogger.system("========== BLENDER WORKER INTERNAL LOG START ==========");
+                    String[] lines = logContent.split("\\r?\\n");
+                    for (String line : lines) {
+                        if (line.trim().isEmpty()) continue;
+                        if (line.toLowerCase().contains("error") || line.toLowerCase().contains("exception")) {
+                            VynaraLogger.e("[BLENDER_WORKER] " + line.trim());
+                        } else {
+                            VynaraLogger.cloud("[BLENDER_WORKER] " + line.trim());
+                        }
+                    }
+                    VynaraLogger.system("========== BLENDER WORKER INTERNAL LOG END ==========");
                 }
                 zis.closeEntry();
             }
