@@ -12,7 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class VynaraLogger {
 
     public enum LogTag {
-        SYSTEM, GEMINI, AI, KNOWLEDGE, TOOL_MANIFEST, VALIDATOR, MAPPER, TASK, EXECUTION, GENERATOR, MATERIAL, VALIDATION, CLOUD
+        SYSTEM, GEMINI, AI, KNOWLEDGE, TOOL_MANIFEST, VALIDATOR, MAPPER, TASK, EXECUTION, GENERATOR, MATERIAL, VALIDATION, CLOUD, BLENDER
     }
 
     public enum LogLevel {
@@ -56,7 +56,7 @@ public class VynaraLogger {
         void onLogsCleared();
     }
 
-    private static final int MAX_LOG_CAPACITY = 500;
+    private static final int MAX_LOG_CAPACITY = 2000;
     private static final List<LogEntry> logBuffer = new ArrayList<>();
     private static final List<LogListener> listeners = new CopyOnWriteArrayList<>();
     private static final Handler mainHandler = new Handler(Looper.getMainLooper());
@@ -80,6 +80,11 @@ public class VynaraLogger {
     public static void validation(LogLevel level, String msg) { log(LogTag.VALIDATION, level, msg); }
     public static void cloud(String msg) { log(LogTag.CLOUD, LogLevel.INFO, msg); }
     public static void cloud(LogLevel level, String msg) { log(LogTag.CLOUD, level, msg); }
+
+    // Dedicated Blender internal worker logging methods
+    public static void blender(String msg) { log(LogTag.BLENDER, LogLevel.INFO, msg); }
+    public static void blender(LogLevel level, String msg) { log(LogTag.BLENDER, level, msg); }
+    public static void blenderError(String msg) { log(LogTag.BLENDER, LogLevel.ERROR, msg); }
 
     // General purpose warning & error logging methods
     public static void w(String msg) {
