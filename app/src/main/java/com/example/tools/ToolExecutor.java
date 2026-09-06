@@ -39,6 +39,21 @@ public class ToolExecutor {
         this.validationManager = validationManager;
     }
 
+    /**
+     * Overloaded execution method resolving direct caller invocations
+     * from dialogs and controllers without altering existing engine logic.
+     */
+    public boolean execute(ToolOperation op, ProjectRuntime runtime) {
+        return executeOperation(op);
+    }
+
+    /**
+     * Overloaded execution method alias for executeOperation.
+     */
+    public boolean execute(ToolOperation op) {
+        return executeOperation(op);
+    }
+
     public boolean executeOperation(ToolOperation op) {
         if (op == null || op.getToolId() == null) return false;
 
