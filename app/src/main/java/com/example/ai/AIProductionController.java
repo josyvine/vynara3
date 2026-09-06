@@ -1,6 +1,7 @@
 package com.example.ai;
 
 import android.content.Context;
+import android.net.Uri;
 
 import com.example.ai.protocol.AIProductionRequest;
 import com.example.character.CharacterManager;
@@ -12,8 +13,12 @@ import com.example.tasks.ExecutionEngine;
 import com.example.tasks.ProductionPlan;
 import com.example.tools.ToolExecutor;
 import com.example.tools.ToolRegistry;
+import com.example.utils.VynaraLogger;
 import com.example.validation.ValidationManager;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,7 +66,9 @@ public class AIProductionController {
         if (engine != null && (engine.toLowerCase().contains("blender") || engine.toLowerCase().contains("cloud"))) {
             apiKeyManager.saveComputeProvider(CloudProvider.GITHUB_ACTIONS);
         }
-        currentPlan = orchestrator.planProduction(userPrompt, style, engine, referenceImageUris);
+
+        List<String> resolvedUris = resolveReferenceUris(referenceImageUris);
+        currentPlan = orchestrator.planProduction(userPrompt, style, engine, resolvedUris);
         return currentPlan;
     }
 
@@ -77,9 +84,11 @@ public class AIProductionController {
             apiKeyManager.saveComputeProvider(CloudProvider.GITHUB_ACTIONS);
         }
 
+        List<String> resolvedUris = resolveReferenceUris(referenceImageUris);
+
         AIProductionRequest request = new AIProductionRequest(userPrompt, style, engine);
-        if (referenceImageUris != null) {
-            for (String uri : referenceImageUris) {
+        if (resolvedUris != null) {
+            for (String uri : resolvedUris) {
                 request.addReferenceImageUri(uri);
             }
         }
@@ -127,6 +136,49 @@ public class AIProductionController {
         } else {
             if (callback != null) callback.onError("No active production plan to execute.");
         }
+    }
+
+    /**
+     * Resolves content:// URIs from the Android system photo picker into local cache files,
+     * ensuring Gemini Vision can read the actual image bytes.
+     */
+    private List<String> resolveReferenceUris(List<String> uris) {
+        List<String> resolved = new ArrayList<>();
+        if (uris == null || uris.isEmpty()) return resolved;
+
+        for (String uriStr : uris) {
+            if (uriStr == null || uriStr.trim().isEmpty()) continue;
+            
+            if (uriStr.startsWith("content://")) {
+                try {
+                    Uri uri = Uri.parse(uriStr);
+                    InputStream inputStream = context.getContentResolver().openInputStream(uri);
+                    if (inputStream != null) {
+                        File cacheDir = new File(context.getCacheDir(), "ref_images");
+                        if (!cacheDir.exists()) cacheDir.mkdirs();
+                        
+                        File destFile = new File(cacheDir, "ref_" + System.currentTimeMillis() + ".jpg");
+                        FileOutputStream outputStream = new FileOutputStream(destFile);
+                        
+                        byte[] buffer = new byte[8192];
+                        int bytesRead;
+                        while ((bytesRead = inputStream.read(buffer)) != -1) {
+                            outputStream.write(buffer, 0, bytesRead);
+                        }
+                        outputStream.flush();
+                        outputStream.close();
+                        inputStream.close();
+                        
+                        resolved.add(destFile.getAbsolutePath());
+                        continue;
+                    }
+                } catch (Exception e) {
+                    VynaraLogger.e("AIProductionController: Failed resolving content URI: " + e.getMessage());
+                }
+            }
+            resolved.add(uriStr);
+        }
+        return resolved;
     }
 
     public Context getContext() { return context; }
