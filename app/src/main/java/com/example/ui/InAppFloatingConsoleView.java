@@ -3,6 +3,7 @@ package com.example.ui;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.os.Build;
 import android.text.Html;
 import android.util.AttributeSet;
 import android.view.LayoutInflater;
@@ -183,11 +184,26 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
     private void appendLog(VynaraLogger.LogEntry entry) {
         if (tvLogOutput == null || entry == null) return;
 
-        String hexColor = getHexColorForLog(entry);
-        String prefix = entry.getFormattedTime() + " " + (entry.getTag() != null ? entry.getTag().name() : "LOG");
-        String htmlLine = "<font color=\"" + hexColor + "\"><b>" + prefix + "</b>: " + entry.getMessage() + "</font><br/>";
+        String msg = entry.getMessage();
+        String lowerMsg = msg.toLowerCase();
 
-        tvLogOutput.append(Html.fromHtml(htmlLine));
+        // High-Alert Red Highlighting: Any line containing error, exception, or traceback turns red
+        boolean isError = entry.getLevel() == VynaraLogger.LogLevel.ERROR
+                || lowerMsg.contains("error")
+                || lowerMsg.contains("exception")
+                || lowerMsg.contains("traceback")
+                || lowerMsg.contains("failed")
+                || lowerMsg.contains("syntaxerror");
+
+        String hexColor = isError ? "#FF5252" : getHexColorForLog(entry);
+        String prefix = entry.getFormattedTime() + " " + (entry.getTag() != null ? entry.getTag().name() : "LOG");
+        String htmlLine = "<font color=\"" + hexColor + "\"><b>" + prefix + "</b>: " + msg + "</font><br/>";
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            tvLogOutput.append(Html.fromHtml(htmlLine, Html.FROM_HTML_MODE_LEGACY));
+        } else {
+            tvLogOutput.append(Html.fromHtml(htmlLine));
+        }
 
         // Defer scroll calculations to post-layout tick for kinetic auto-scroll
         if (scrollView != null) {
@@ -227,6 +243,8 @@ public class InAppFloatingConsoleView extends FrameLayout implements VynaraLogge
                 return "#81C784"; // Light Green
             case CLOUD:
                 return "#40C4FF"; // Vibrant Cloud Cyan/Blue
+            case BLENDER:
+                return "#FF9800"; // Distinctive Blender Orange
             default:
                 return "#FFFFFF";
         }
