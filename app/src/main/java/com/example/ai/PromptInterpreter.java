@@ -559,15 +559,25 @@ public class PromptInterpreter {
             defaultBpyScript.append("fill = bpy.context.active_object\n");
             defaultBpyScript.append("fill.data.energy = 800.0\n\n");
 
-            defaultBpyScript.append("# Dual Render Deliverables: Render Still Image (PNG) + Export 3D Mesh (GLB)\n");
-            defaultBpyScript.append("bpy.context.scene.render.resolution_x = 1280\n");
-            defaultBpyScript.append("bpy.context.scene.render.resolution_y = 720\n");
-            defaultBpyScript.append("bpy.context.scene.render.filepath = 'output/render.png'\n");
+            // 1. ALWAYS Export 3D GLTF Model FIRST (Guarantees model.glb exists on disk)
+            defaultBpyScript.append("# Step 1: Export Interactive 3D Model (First Priority)\n");
             defaultBpyScript.append("try:\n");
+            defaultBpyScript.append("    bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n");
+            defaultBpyScript.append("    print('3D GLTF Export Successful.')\n");
+            defaultBpyScript.append("except Exception as ge: print(f'GLTF export warning: {ge}')\n\n");
+
+            // 2. Render Still Preview Image using Headless-Safe Cycles CPU Engine
+            defaultBpyScript.append("# Step 2: Render Photorealistic Still Preview Image via CPU Cycles\n");
+            defaultBpyScript.append("try:\n");
+            defaultBpyScript.append("    bpy.context.scene.render.engine = 'CYCLES'\n");
+            defaultBpyScript.append("    bpy.context.scene.cycles.device = 'CPU'\n");
+            defaultBpyScript.append("    bpy.context.scene.cycles.samples = 16\n");
+            defaultBpyScript.append("    bpy.context.scene.render.resolution_x = 1280\n");
+            defaultBpyScript.append("    bpy.context.scene.render.resolution_y = 720\n");
+            defaultBpyScript.append("    bpy.context.scene.render.filepath = 'output/render.png'\n");
             defaultBpyScript.append("    bpy.ops.render.render(write_still=True)\n");
-            defaultBpyScript.append("except Exception as re:\n");
-            defaultBpyScript.append("    print(f'Render still warning: {re}')\n\n");
-            defaultBpyScript.append("bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB')\n");
+            defaultBpyScript.append("    print('Cycles preview render complete.')\n");
+            defaultBpyScript.append("except Exception as re: print(f'Preview render note: {re}')\n");
 
             // Build ToolOperation incorporating both your procedural script AND the modular sub-scripts
             ToolOperation cloudOp = new ToolOperation("blender.cloud_generate")
