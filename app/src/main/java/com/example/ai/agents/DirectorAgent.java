@@ -33,7 +33,7 @@ public class DirectorAgent {
 
     /**
      * Phase 1: Formulates the scene specification using Gemini Vision.
-     * Encodes real reference photos to Base64 so the AI visually analyzes the scene.
+     * Encodes reference photos to Base64 so the AI visually analyzes the scene structure.
      */
     public void formulateDirectorSpec(final String userPrompt,
                                       final String style,
@@ -58,6 +58,8 @@ public class DirectorAgent {
                 String b64 = readImageAsBase64(uriOrPath);
                 if (b64 != null && !b64.isEmpty()) {
                     base64Images.add(b64);
+                } else {
+                    VynaraLogger.w("DirectorAgent: Reference image could not be converted to Base64: " + uriOrPath);
                 }
             }
         }
@@ -110,7 +112,7 @@ public class DirectorAgent {
         promptBuilder.append("USER PROMPT: ").append(userPrompt).append("\n");
         promptBuilder.append("REQUESTED STYLE: ").append(style).append("\n");
         if (!base64Images.isEmpty()) {
-            promptBuilder.append("VISUAL REFERENCE ATTACHED: Inspect the attached image. Match the architectural features, pool illumination, materials, and lighting mood.\n");
+            promptBuilder.append("VISUAL REFERENCE ATTACHED: Inspect the attached visual reference image(s). Match the architectural features, pool illumination, materials, and lighting mood.\n");
         }
 
         VynaraLogger.system("DirectorAgent: Formulating live scene specification via Gemini Vision [" + activeModel + "] with " + base64Images.size() + " image(s)...");
@@ -160,15 +162,31 @@ public class DirectorAgent {
     }
 
     /**
-     * Reads a cached local file path, scales it down to max 1024px for fast network latency,
-     * and encodes it to a Base64 JPEG string.
+     * Resolves local file paths, file URIs, or pre-encoded base64 strings,
+     * downscaling large images to a max 1024px dimension to ensure fast network latency.
      */
     private String readImageAsBase64(String pathOrUri) {
         if (pathOrUri == null || pathOrUri.trim().isEmpty()) return null;
 
+        String cleanPath = pathOrUri.trim();
+
+        // Handle file:// URI scheme
+        if (cleanPath.startsWith("file://")) {
+            cleanPath = cleanPath.substring(7);
+        }
+
+        // Handle raw Base64 data strings if already formatted
+        if (cleanPath.startsWith("data:image") && cleanPath.contains("base64,")) {
+            return cleanPath.substring(cleanPath.indexOf("base64,") + 7).trim();
+        }
+
         try {
-            File imageFile = new File(pathOrUri);
+            File imageFile = new File(cleanPath);
             if (!imageFile.exists() || imageFile.length() == 0) {
+                // If direct File object fails, check if the string itself is a raw base64 string
+                if (cleanPath.length() > 100 && !cleanPath.contains(File.separator)) {
+                    return cleanPath;
+                }
                 return null;
             }
 
@@ -190,7 +208,7 @@ public class DirectorAgent {
             if (bitmap == null) return null;
 
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, outputStream);
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream);
             byte[] imageBytes = outputStream.toByteArray();
             bitmap.recycle();
 
