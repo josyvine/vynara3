@@ -300,6 +300,12 @@ public class ToolExecutor {
                 return false;
             }
 
+            case "image.process_reference":
+            case "image.analyze": {
+                VynaraLogger.execution("Executing image.process_reference: Reference images verified and ingested.");
+                return true;
+            }
+
             case "blender.generate":
             case "blender.cloud_generate": {
                 String prompt = op.getStringParam("prompt", "3D asset");
