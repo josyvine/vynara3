@@ -125,6 +125,9 @@ jobs:
           bpy_script = bpy_script.replace("bpy.ops.light.add(", "bpy.ops.object.light_add(")
           bpy_script = bpy_script.replace("bpy.ops.camera.add(", "bpy.ops.object.camera_add(")
 
+          # Auto-Repair 5: Fix hallucinated combined object.mesh operator calls
+          bpy_script = bpy_script.replace("bpy.ops.object.mesh.", "bpy.ops.mesh.")
+
           # Ensure standardized GLTF/GLB export command exists safely at root indentation
           if 'export_scene.gltf' not in bpy_script:
               bpy_script += (
