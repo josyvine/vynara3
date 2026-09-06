@@ -30,9 +30,8 @@ public class GeminiApiClient {
             "1. Start with `import bpy, math, sys, os`.\n" +
             "2. Always clear existing objects: `bpy.ops.object.select_all(action='SELECT')` and `bpy.ops.object.delete()`.\n" +
             "3. Generate requested geometry, modifiers (subdivision, bevel, boolean, mirror), materials (Principled BSDF), and armatures.\n" +
-            "4. Read the target export path from command-line arguments: `output_path = sys.argv[-1] if len(sys.argv) > 1 and sys.argv[-1].endswith('.glb') else 'output.glb'`.\n" +
-            "5. Ensure output directory exists and export to standard GLB: `bpy.ops.export_scene.gltf(filepath=output_path, export_format='GLB', export_skins=True, export_animations=True)`.\n" +
-            "6. Output ONLY raw Python code without extra conversational commentary.";
+            "4. Ensure output directory exists and export to standard GLB: `bpy.ops.export_scene.gltf(filepath='output/model.glb', export_format='GLB', export_skins=True, export_animations=True)`.\n" +
+            "5. Output ONLY raw Python code without extra conversational commentary.";
 
     private final OkHttpClient client;
     private final Handler mainHandler;
@@ -45,8 +44,8 @@ public class GeminiApiClient {
     public GeminiApiClient() {
         this.client = new OkHttpClient.Builder()
                 .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .writeTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(120, TimeUnit.SECONDS)
+                .writeTimeout(60, TimeUnit.SECONDS)
                 .build();
         this.mainHandler = new Handler(Looper.getMainLooper());
     }
@@ -96,8 +95,10 @@ public class GeminiApiClient {
                     }
 
                     if (modelList.isEmpty()) {
+                        modelList.add(new AIModel("gemini-2.5-flash", "gemini-2.5-flash", "Latest high-speed multimodal production model", true));
+                        modelList.add(new AIModel("gemini-2.5-pro", "gemini-2.5-pro", "Advanced multi-agent reasoning model", true));
                         modelList.add(new AIModel("gemini-1.5-flash", "gemini-1.5-flash", "Standard fast production model", true));
-                        modelList.add(new AIModel("gemini-1.5-pro", "gemini-1.5-pro", "Advanced reasoning model", true));
+                        modelList.add(new AIModel("gemini-1.5-pro", "gemini-1.5-pro", "Legacy reasoning model", true));
                     }
 
                     mainHandler.post(() -> callback.onSuccess(modelList));
@@ -142,6 +143,36 @@ public class GeminiApiClient {
 
     public void generateBlenderScript(String apiKey, String modelId, String userPrompt, final ApiCallback<String> callback) {
         generateContentInternal(apiKey, modelId, BLENDER_SYSTEM_INSTRUCTION, userPrompt, null, false, new ApiCallback<String>() {
+            @Override
+            public void onSuccess(String result) {
+                String cleanedScript = cleanPythonOutput(result);
+                callback.onSuccess(cleanedScript);
+            }
+
+            @Override
+            public void onError(String errorMessage) {
+                callback.onError(errorMessage);
+            }
+        });
+    }
+
+    public void generateBlenderScript(String apiKey, String modelId, String systemInstruction, String userPrompt, final ApiCallback<String> callback) {
+        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, null, false, new ApiCallback<String>() {
+            @Override
+            public void onSuccess(String result) {
+                String cleanedScript = cleanPythonOutput(result);
+                callback.onSuccess(cleanedScript);
+            }
+
+            @Override
+            public void onError(String errorMessage) {
+                callback.onError(errorMessage);
+            }
+        });
+    }
+
+    public void generateBlenderScript(String apiKey, String modelId, String systemInstruction, String userPrompt, List<String> base64Images, final ApiCallback<String> callback) {
+        generateContentInternal(apiKey, modelId, systemInstruction, userPrompt, base64Images, false, new ApiCallback<String>() {
             @Override
             public void onSuccess(String result) {
                 String cleanedScript = cleanPythonOutput(result);
@@ -258,7 +289,7 @@ public class GeminiApiClient {
 
                                 if (resParts != null && resParts.length() > 0) {
                                     String textResult = resParts.getJSONObject(0).optString("text", "");
-                                    textResult = cleanJsonOutput(textResult);
+                                    textResult = cleanOutput(textResult);
                                     final String finalResult = textResult;
                                     mainHandler.post(() -> callback.onSuccess(finalResult));
                                     return;
@@ -280,11 +311,13 @@ public class GeminiApiClient {
         }
     }
 
-    private String cleanJsonOutput(String input) {
+    public String cleanOutput(String input) {
         if (input == null) return "";
         String trimmed = input.trim();
         if (trimmed.startsWith("```json")) {
             trimmed = trimmed.substring(7);
+        } else if (trimmed.startsWith("```python")) {
+            trimmed = trimmed.substring(9);
         } else if (trimmed.startsWith("```")) {
             trimmed = trimmed.substring(3);
         }
@@ -294,17 +327,11 @@ public class GeminiApiClient {
         return trimmed.trim();
     }
 
-    private String cleanPythonOutput(String input) {
-        if (input == null) return "";
-        String trimmed = input.trim();
-        if (trimmed.startsWith("```python")) {
-            trimmed = trimmed.substring(9);
-        } else if (trimmed.startsWith("```")) {
-            trimmed = trimmed.substring(3);
-        }
-        if (trimmed.endsWith("```")) {
-            trimmed = trimmed.substring(0, trimmed.length() - 3);
-        }
-        return trimmed.trim();
+    public String cleanJsonOutput(String input) {
+        return cleanOutput(input);
+    }
+
+    public String cleanPythonOutput(String input) {
+        return cleanOutput(input);
     }
 }
