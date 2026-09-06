@@ -82,7 +82,7 @@ jobs:
 
           EOF
 
-          # Run headless Blender and log output safely
+          # Run headless Blender and capture output log
           /opt/blender/blender -b -P run_task.py 2>&1 | tee output/blender_execution.log || true
 
           # Verify output files
@@ -94,10 +94,11 @@ jobs:
             exit 1
           fi
 
-      # Step 4: Upload both GLB model and Cycles render still image
+      # Step 4: Upload both GLB model, Cycles render, and execution logs (Runs even if Step 3 fails)
       - name: Upload Finished Model and Render Preview
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.client_payload.asset_id }}
           path: output/
-          if-no-files-found: error
+          if-no-files-found: warn
