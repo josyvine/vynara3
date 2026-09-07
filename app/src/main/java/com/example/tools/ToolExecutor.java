@@ -1,6 +1,7 @@
 package com.example.tools;
 
 import com.example.ai.ApiKeyManager;
+import com.example.ai.GeminiApiClient;
 import com.example.asset.AssetManager;
 import com.example.character.Character;
 import com.example.character.CharacterManager;
@@ -346,118 +347,203 @@ public class ToolExecutor {
                 if (!modelsDir.exists()) {
                     modelsDir.mkdirs();
                 }
-                File outputGlb = new File(modelsDir, assetId + ".glb");
-                final CountDownLatch latch = new CountDownLatch(1);
-                final AtomicBoolean success = new AtomicBoolean(false);
 
-                if (provider == CloudProvider.HUGGING_FACE && keyManager.hasHuggingFaceConfig()) {
-                    HuggingFaceBridge hfBridge = new HuggingFaceBridge();
-                    hfBridge.generateAsset(keyManager.getHuggingFaceSpaceUrl(), keyManager.getHuggingFaceToken(), bpyScript, outputGlb, new HuggingFaceBridge.GenerationCallback() {
-                        @Override
-                        public void onProgress(int percentage, long bytesRead, long totalBytes) {
-                            VynaraLogger.ai("Hugging Face download progress: " + percentage + "%");
-                        }
+                int maxAiAttempts = 2;
+                String currentBpyScript = bpyScript;
+                String currentAssetId = assetId;
+                boolean finalSuccess = false;
 
-                        @Override
-                        public void onSuccess(File downloadedGlbFile) {
-                            try {
-                                GLTFImporter.ImportResult result = GLTFImporter.loadFromFile(downloadedGlbFile);
-                                for (SceneObject obj : result.getSceneObjects()) {
-                                    engine.getSceneManager().getActiveScene().addObject(obj);
-                                }
-                                for (Character ch : result.getCharacters()) {
-                                    characterManager.registerCharacter(ch);
-                                    if (ch.getSceneObject() != null) {
-                                        engine.getSceneManager().getActiveScene().addObject(ch.getSceneObject());
-                                    }
-                                }
-                                engine.getSceneManager().updateWorldTransforms();
-                                autoFrameCameraOnScene();
-                                success.set(true);
-                            } catch (Exception ex) {
-                                VynaraLogger.e("Failed to import generated GLB into active scene", ex);
-                            } finally {
-                                latch.countDown();
+                for (int attempt = 1; attempt <= maxAiAttempts; attempt++) {
+                    final int currentAttempt = attempt;
+                    final CountDownLatch latch = new CountDownLatch(1);
+                    final AtomicBoolean attemptSuccess = new AtomicBoolean(false);
+                    final StringBuilder failureMessageHolder = new StringBuilder();
+
+                    File outputGlb = new File(modelsDir, currentAssetId + ".glb");
+
+                    if (provider == CloudProvider.HUGGING_FACE && keyManager.hasHuggingFaceConfig()) {
+                        HuggingFaceBridge hfBridge = new HuggingFaceBridge();
+                        hfBridge.generateAsset(keyManager.getHuggingFaceSpaceUrl(), keyManager.getHuggingFaceToken(), currentBpyScript, outputGlb, new HuggingFaceBridge.GenerationCallback() {
+                            @Override
+                            public void onProgress(int percentage, long bytesRead, long totalBytes) {
+                                VynaraLogger.ai("Hugging Face download progress: " + percentage + "%");
                             }
-                        }
 
-                        @Override
-                        public void onError(String errorMessage) {
-                            VynaraLogger.e("Hugging Face worker error: " + errorMessage);
-                            latch.countDown();
-                        }
-                    });
-                } else {
-                    GitHubWorkflowBridge ghBridge = new GitHubWorkflowBridge();
-                    VynaraLogger.system("GitHubWorkflowBridge: Triggering workflow dispatch for " + targetRepo);
-                    ghBridge.dispatchGenerationWorkflow(targetRepo, targetPat, "vynara_generate", assetId, bpyScript, new GitHubWorkflowBridge.WorkflowDispatchCallback() {
-                        @Override
-                        public void onDispatched(String eventType, String aId) {
-                            VynaraLogger.system("GitHub generation workflow dispatched successfully to " + targetRepo + ". Monitoring run progress...");
-                            
-                            ghBridge.awaitWorkflowAndDownloadArtifact(targetRepo, targetPat, assetId, outputGlb, new GitHubWorkflowBridge.WorkflowPollingCallback() {
-                                @Override
-                                public void onStatusUpdate(String status, String details) {
-                                    VynaraLogger.system("GitHub Action Execution: " + details);
-                                }
-
-                                @Override
-                                public void onProgress(int percentage, long bytesRead, long totalBytes) {
-                                    VynaraLogger.system("Downloading Artifact: " + percentage + "% (" + bytesRead + "/" + totalBytes + " bytes)");
-                                }
-
-                                @Override
-                                public void onSuccess(File downloadedGlbFile) {
-                                    try {
-                                        VynaraLogger.system("Importing downloaded GLB into 3D scene engine...");
-                                        GLTFImporter.ImportResult result = GLTFImporter.loadFromFile(downloadedGlbFile);
-                                        for (SceneObject obj : result.getSceneObjects()) {
-                                            engine.getSceneManager().getActiveScene().addObject(obj);
-                                        }
-                                        for (Character ch : result.getCharacters()) {
-                                            characterManager.registerCharacter(ch);
-                                            // Attach rigged character mesh to active scene viewport so it renders immediately
-                                            if (ch.getSceneObject() != null) {
-                                                engine.getSceneManager().getActiveScene().addObject(ch.getSceneObject());
-                                            }
-                                        }
-                                        engine.getSceneManager().updateWorldTransforms();
-                                        autoFrameCameraOnScene();
-
-                                        File renderImg = GitHubWorkflowBridge.getAssociatedRenderImage(downloadedGlbFile);
-                                        if (renderImg != null) {
-                                            VynaraLogger.system("ToolExecutor: Photorealistic Cycles preview render verified at " + renderImg.getName());
-                                        }
-
-                                        success.set(true);
-                                    } catch (Exception ex) {
-                                        VynaraLogger.e("Failed to import downloaded GLB into active scene", ex);
-                                    } finally {
-                                        latch.countDown();
+                            @Override
+                            public void onSuccess(File downloadedGlbFile) {
+                                try {
+                                    GLTFImporter.ImportResult result = GLTFImporter.loadFromFile(downloadedGlbFile);
+                                    for (SceneObject obj : result.getSceneObjects()) {
+                                        engine.getSceneManager().getActiveScene().addObject(obj);
                                     }
-                                }
-
-                                @Override
-                                public void onError(String errorMessage) {
-                                    VynaraLogger.e("GitHub Actions workflow pipeline failed: " + errorMessage);
+                                    for (Character ch : result.getCharacters()) {
+                                        characterManager.registerCharacter(ch);
+                                        if (ch.getSceneObject() != null) {
+                                            engine.getSceneManager().getActiveScene().addObject(ch.getSceneObject());
+                                        }
+                                    }
+                                    engine.getSceneManager().updateWorldTransforms();
+                                    autoFrameCameraOnScene();
+                                    attemptSuccess.set(true);
+                                } catch (Exception ex) {
+                                    VynaraLogger.e("Failed to import generated GLB into active scene", ex);
+                                } finally {
                                     latch.countDown();
                                 }
-                            });
-                        }
+                            }
 
-                        @Override
-                        public void onError(String errorMessage) {
-                            VynaraLogger.e("GitHub workflow dispatch failed: " + errorMessage);
-                            latch.countDown();
+                            @Override
+                            public void onError(String errorMessage) {
+                                VynaraLogger.e("Hugging Face worker error: " + errorMessage);
+                                failureMessageHolder.append(errorMessage);
+                                latch.countDown();
+                            }
+                        });
+                    } else {
+                        GitHubWorkflowBridge ghBridge = new GitHubWorkflowBridge();
+                        VynaraLogger.system("GitHubWorkflowBridge: Triggering workflow dispatch for " + targetRepo + " (Attempt " + currentAttempt + "/" + maxAiAttempts + ")");
+                        
+                        final String dispatchAssetId = currentAssetId;
+                        final String dispatchScript = currentBpyScript;
+
+                        ghBridge.dispatchGenerationWorkflow(targetRepo, targetPat, "vynara_generate", dispatchAssetId, dispatchScript, new GitHubWorkflowBridge.WorkflowDispatchCallback() {
+                            @Override
+                            public void onDispatched(String eventType, String aId) {
+                                VynaraLogger.system("GitHub generation workflow dispatched successfully to " + targetRepo + ". Monitoring run progress...");
+                                
+                                ghBridge.awaitWorkflowAndDownloadArtifact(targetRepo, targetPat, dispatchAssetId, outputGlb, new GitHubWorkflowBridge.WorkflowPollingCallback() {
+                                    @Override
+                                    public void onStatusUpdate(String status, String details) {
+                                        VynaraLogger.system("GitHub Action Execution: " + details);
+                                    }
+
+                                    @Override
+                                    public void onProgress(int percentage, long bytesRead, long totalBytes) {
+                                        VynaraLogger.system("Downloading Artifact: " + percentage + "% (" + bytesRead + "/" + totalBytes + " bytes)");
+                                    }
+
+                                    @Override
+                                    public void onSuccess(File downloadedGlbFile) {
+                                        try {
+                                            VynaraLogger.system("Importing downloaded GLB into 3D scene engine...");
+                                            GLTFImporter.ImportResult result = GLTFImporter.loadFromFile(downloadedGlbFile);
+                                            for (SceneObject obj : result.getSceneObjects()) {
+                                                engine.getSceneManager().getActiveScene().addObject(obj);
+                                            }
+                                            for (Character ch : result.getCharacters()) {
+                                                characterManager.registerCharacter(ch);
+                                                // Attach rigged character mesh to active scene viewport so it renders immediately
+                                                if (ch.getSceneObject() != null) {
+                                                    engine.getSceneManager().getActiveScene().addObject(ch.getSceneObject());
+                                                }
+                                            }
+                                            engine.getSceneManager().updateWorldTransforms();
+                                            autoFrameCameraOnScene();
+
+                                            File renderImg = GitHubWorkflowBridge.getAssociatedRenderImage(downloadedGlbFile);
+                                            if (renderImg != null) {
+                                                VynaraLogger.system("ToolExecutor: Photorealistic Cycles preview render verified at " + renderImg.getName());
+                                            }
+
+                                            attemptSuccess.set(true);
+                                        } catch (Exception ex) {
+                                            VynaraLogger.e("Failed to import downloaded GLB into active scene", ex);
+                                        } finally {
+                                            latch.countDown();
+                                        }
+                                    }
+
+                                    @Override
+                                    public void onError(String errorMessage) {
+                                        VynaraLogger.e("GitHub Actions workflow pipeline error: " + errorMessage);
+                                        failureMessageHolder.append(errorMessage);
+                                        latch.countDown();
+                                    }
+                                });
+                            }
+
+                            @Override
+                            public void onError(String errorMessage) {
+                                VynaraLogger.e("GitHub workflow dispatch failed: " + errorMessage);
+                                failureMessageHolder.append(errorMessage);
+                                latch.countDown();
+                            }
+                        });
+                    }
+
+                    try {
+                        latch.await(300, TimeUnit.SECONDS);
+                    } catch (InterruptedException ignored) {}
+
+                    if (attemptSuccess.get()) {
+                        finalSuccess = true;
+                        break;
+                    }
+
+                    // SOLUTION B: AI Self-Correction Loop for Attempt 2
+                    String failureReason = failureMessageHolder.toString();
+                    if (attempt < maxAiAttempts && keyManager.hasApiKey() && !failureReason.isEmpty()) {
+                        VynaraLogger.system("ToolExecutor: Intercepted Blender runtime failure [" + failureReason + "]. Engaging AI Self-Correction Loop...");
+                        
+                        final CountDownLatch repairLatch = new CountDownLatch(1);
+                        final StringBuilder repairedScriptHolder = new StringBuilder();
+
+                        String repairInstruction = "You are an expert Blender Python (`bpy`) engineer.\n" +
+                                "A generated Blender script failed during headless execution on the cloud worker.\n" +
+                                "Analyze the original user prompt, the failed script, and the exact Blender terminal error message.\n" +
+                                "Fix the syntax/API/operator/enum error and return ONLY the complete corrected Python script inside a single ```python block.\n" +
+                                "RULES:\n" +
+                                "1. Output ONLY executable Python code inside ```python. No commentary.\n" +
+                                "2. Ensure all mesh operators use `bpy.ops.mesh.primitive_...` (never `_create` or `bpy.ops.object.mesh.`).\n" +
+                                "3. Ensure all lighting operators use `bpy.ops.object.light_add` (never `bpy.ops.light.add`).\n" +
+                                "4. In `bpy.data.textures.new(name, type=...)`, type MUST be one of ('NONE', 'BLEND', 'CLOUDS', 'DISTORTED_NOISE', 'IMAGE', 'MAGIC', 'MARBLE', 'MUSGRAVE', 'NOISE', 'STUCCI', 'VORONOI', 'WOOD'). Never invent unlisted types like 'STORM'.\n" +
+                                "5. Preserve all original multi-part 3D geometry and materials from the user's prompt.";
+
+                        String repairPrompt = "USER PROMPT: " + prompt + "\n\n" +
+                                "EXACT BLENDER TERMINAL ERROR / TRACEBACK:\n" + failureReason + "\n\n" +
+                                "FAILED SCRIPT:\n" + currentBpyScript;
+
+                        ProjectRuntime.getInstance().getAIOrchestrator().getApiClient().generateContent(
+                                keyManager.getApiKey(),
+                                keyManager.getSelectedModel(),
+                                repairInstruction,
+                                repairPrompt,
+                                new GeminiApiClient.ApiCallback<String>() {
+                                    @Override
+                                    public void onSuccess(String result) {
+                                        String cleaned = ProjectRuntime.getInstance().getAIOrchestrator().getApiClient().cleanPythonOutput(result);
+                                        if (!cleaned.isEmpty()) {
+                                            repairedScriptHolder.append(cleaned);
+                                        }
+                                        repairLatch.countDown();
+                                    }
+
+                                    @Override
+                                    public void onError(String errorMessage) {
+                                        VynaraLogger.e("AI Self-Correction repair call failed: " + errorMessage);
+                                        repairLatch.countDown();
+                                    }
+                                }
+                        );
+
+                        try {
+                            repairLatch.await(45, TimeUnit.SECONDS);
+                        } catch (InterruptedException ignored) {}
+
+                        if (repairedScriptHolder.length() > 0) {
+                            currentBpyScript = repairedScriptHolder.toString();
+                            currentAssetId = "asset_" + System.currentTimeMillis();
+                            VynaraLogger.system("ToolExecutor: AI Self-Correction synthesized fixed script (" + currentBpyScript.length() + " chars). Re-dispatching to worker...");
+                        } else {
+                            VynaraLogger.w("ToolExecutor: AI Self-Correction returned empty fix. Halting pipeline.");
+                            break;
                         }
-                    });
+                    } else {
+                        break;
+                    }
                 }
 
-                try {
-                    latch.await(300, TimeUnit.SECONDS);
-                } catch (InterruptedException ignored) {}
-
-                return success.get();
+                return finalSuccess;
             }
 
             case "rig.auto_rig_cloud": {
